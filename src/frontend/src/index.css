@@ -1,0 +1,211 @@
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/assets/fonts/JetBrainsMono.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/assets/fonts/BricolageGrotesque.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0.12 0.02 240;
+    --foreground: 0.94 0.01 240;
+    --card: 0.14 0.025 240;
+    --card-foreground: 0.94 0.01 240;
+    --popover: 0.13 0.02 240;
+    --popover-foreground: 0.94 0.01 240;
+    --primary: 0.78 0.18 210;
+    --primary-foreground: 0.08 0.01 240;
+    --secondary: 0.17 0.03 240;
+    --secondary-foreground: 0.88 0.01 240;
+    --muted: 0.18 0.025 240;
+    --muted-foreground: 0.6 0.04 240;
+    --accent: 0.82 0.15 205;
+    --accent-foreground: 0.08 0.01 240;
+    --destructive: 0.55 0.22 25;
+    --destructive-foreground: 0.98 0.005 240;
+    --border: 0.22 0.04 230;
+    --input: 0.18 0.03 235;
+    --ring: 0.78 0.18 210;
+    --radius: 0.5rem;
+    --chart-1: 0.78 0.18 210;
+    --chart-2: 0.65 0.15 200;
+    --chart-3: 0.55 0.12 220;
+    --chart-4: 0.45 0.1 215;
+    --chart-5: 0.35 0.08 225;
+    --sidebar: 0.11 0.02 240;
+    --sidebar-foreground: 0.94 0.01 240;
+    --sidebar-primary: 0.78 0.18 210;
+    --sidebar-primary-foreground: 0.08 0.01 240;
+    --sidebar-accent: 0.17 0.03 240;
+    --sidebar-accent-foreground: 0.88 0.01 240;
+    --sidebar-border: 0.22 0.04 230;
+    --sidebar-ring: 0.78 0.18 210;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Bricolage Grotesque", sans-serif;
+  }
+}
+
+/* Glow effects */
+.glow-cyan {
+  box-shadow: 0 0 20px oklch(0.78 0.18 210 / 0.4), 0 0 40px
+    oklch(0.78 0.18 210 / 0.15);
+}
+
+.glow-text-cyan {
+  text-shadow: 0 0 20px oklch(0.78 0.18 210 / 0.8), 0 0 40px
+    oklch(0.78 0.18 210 / 0.4);
+}
+
+.jarvis-border-glow {
+  border-left: 2px solid oklch(0.78 0.18 210);
+  box-shadow: -4px 0 16px oklch(0.78 0.18 210 / 0.4), inset 0 0 30px
+    oklch(0.78 0.18 210 / 0.05);
+}
+
+/* Animated pulse ring */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.2;
+  }
+  100% {
+    transform: scale(0.92);
+    opacity: 0.6;
+  }
+}
+
+@keyframes pulse-ring-2 {
+  0% {
+    transform: scale(0.88);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.08;
+  }
+  100% {
+    transform: scale(0.88);
+    opacity: 0.3;
+  }
+}
+
+.pulse-ring-1 {
+  animation: pulse-ring 2.5s ease-in-out infinite;
+}
+
+.pulse-ring-2 {
+  animation: pulse-ring-2 2.5s ease-in-out infinite 0.5s;
+}
+
+@keyframes typing-dot {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.3;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.typing-dot:nth-child(1) {
+  animation: typing-dot 1.4s ease-in-out infinite 0s;
+}
+.typing-dot:nth-child(2) {
+  animation: typing-dot 1.4s ease-in-out infinite 0.2s;
+}
+.typing-dot:nth-child(3) {
+  animation: typing-dot 1.4s ease-in-out infinite 0.4s;
+}
+
+@keyframes scan-line {
+  0% {
+    top: 0%;
+    opacity: 1;
+  }
+  95% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+.scan-line {
+  animation: scan-line 4s linear infinite;
+}
+
+/* HUD corner decorations */
+.hud-corner {
+  position: relative;
+}
+.hud-corner::before,
+.hud-corner::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: oklch(0.78 0.18 210);
+  border-style: solid;
+  opacity: 0.6;
+}
+.hud-corner-tl::before {
+  top: 0;
+  left: 0;
+  border-width: 1.5px 0 0 1.5px;
+}
+.hud-corner-tr::after {
+  top: 0;
+  right: 0;
+  border-width: 1.5px 1.5px 0 0;
+}
+
+/* Grid background */
+.grid-bg {
+  background-image: linear-gradient(
+      oklch(0.78 0.18 210 / 0.03) 1px,
+      transparent 1px
+    ), linear-gradient(90deg, oklch(0.78 0.18 210 / 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: oklch(0.12 0.02 240);
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(0.3 0.06 220);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.78 0.18 210 / 0.6);
+}
