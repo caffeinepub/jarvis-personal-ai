@@ -18,4 +18,5 @@ export interface backendInterface {
     getHistory(): Promise<Array<Message>>;
     getMessageCount(): Promise<bigint>;
     sendMessage(userText: string): Promise<string>;
+    saveJarvisMessage(content: string): Promise<void>;
 }

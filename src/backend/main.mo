@@ -11,6 +11,7 @@ actor {
     timestamp : Int;
   };
 
+  // Kept for upgrade compatibility with previous deployment (M0169)
   type HttpRequestArgs = {
     url : Text;
     max_response_bytes : ?Nat64;
@@ -33,6 +34,7 @@ actor {
     http_request : HttpRequestArgs -> async HttpResponsePayload;
   };
 
+  // Retained to satisfy stable variable compatibility with previous version
   let ic : IC = actor "aaaaa-aa";
 
   var messages : [Message] = [];
@@ -141,88 +143,8 @@ actor {
     if (userText.size() < 40) {
       return "Tell me more. I want to understand what is really on your mind.";
     };
+    // Signal the frontend to perform a browser-based web search
     return "__SEARCH__";
-  };
-
-  func hexStr(n : Nat) : Text {
-    let digits = ["0","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F"];
-    var i = 0;
-    var r = "0";
-    for (d in digits.vals()) { if (i == n) { r := d }; i += 1 };
-    r;
-  };
-
-  func encodeQuery(text : Text) : Text {
-    var result = "";
-    for (c in text.chars()) {
-      let n = c.toNat32().toNat();
-      if ((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '-' or c == '_') {
-        result #= c.toText();
-      } else if (c == ' ') {
-        result #= "+";
-      } else {
-        result #= "%" # hexStr(n / 16) # hexStr(n % 16);
-      };
-    };
-    result;
-  };
-
-  // Extract first "snippet" value from JSON text
-  // Avoids char literals for special chars by using numeric codes:
-  // 34 = double-quote, 92 = backslash
-  func extractSnippet(json : Text) : ?Text {
-    let marker = "snippet\":";
-    let markerArr = marker.toArray();
-    let markerLen = markerArr.size();
-    var matchCount = 0;
-    var snippetStart = 0;
-    var found = false;
-    var charIdx = 0;
-
-    label search for (c in json.chars()) {
-      if (not found) {
-        if (matchCount < markerLen and c == markerArr[matchCount]) {
-          matchCount += 1;
-          if (matchCount == markerLen) {
-            snippetStart := charIdx + 2;
-            found := true;
-          };
-        } else {
-          matchCount := 0;
-          if (markerLen > 0 and c == markerArr[0]) {
-            matchCount := 1;
-          };
-        };
-      };
-      charIdx += 1;
-    };
-
-    if (not found) return null;
-
-    var result = "";
-    var ci = 0;
-    var prevBackslash = false;
-    label extract for (c in json.chars()) {
-      if (ci >= snippetStart) {
-        let code = c.toNat32().toNat();
-        if (code == 34 and not prevBackslash) {
-          return ?result;
-        };
-        if (code == 92) {
-          if (prevBackslash) {
-            result #= c.toText();
-            prevBackslash := false;
-          } else {
-            prevBackslash := true;
-          };
-        } else {
-          prevBackslash := false;
-          result #= c.toText();
-        };
-      };
-      ci += 1;
-    };
-    if (result == "") null else ?result;
   };
 
   public shared func sendMessage(userText : Text) : async Text {
@@ -232,43 +154,19 @@ actor {
 
     addMessage({ id = nextId; role = "user"; content = userText; timestamp = Time.now() });
 
-    let builtIn = generateResponse(userText);
-    var responseText = builtIn;
+    let response = generateResponse(userText);
 
-    if (builtIn == "__SEARCH__") {
-      let encoded = encodeQuery(userText);
-      let url = "https://www.searchapi.io/api/v1/search?engine=google&q=" # encoded # "&api_key=8xDr7MLMfQ8aMqq7yNrQzbJx";
-      try {
-        let response = await ic.http_request({
-          url = url;
-          max_response_bytes = ?30000;
-          headers = [
-            { name = "Accept"; value = "application/json" },
-            { name = "User-Agent"; value = "JARVIS/1.0" }
-          ];
-          body = null;
-          method = #get;
-          transform = null;
-        });
-        let bodyText = switch (response.body.decodeUtf8()) {
-          case (?t) t;
-          case null "";
-        };
-        switch (extractSnippet(bodyText)) {
-          case (?snippet) {
-            responseText := "Here is what I found: " # snippet # " -- Would you like me to go deeper on any part of this?";
-          };
-          case null {
-            responseText := "I searched for that, but could not parse a clear result. Could you rephrase your question?";
-          };
-        };
-      } catch (_) {
-        responseText := "I attempted a live search but the connection did not go through. Please try again in a moment.";
-      };
+    if (response == "__SEARCH__") {
+      // Frontend will call saveJarvisMessage after browser search completes
+      return "__SEARCH__:" # userText;
     };
 
-    addMessage({ id = nextId; role = "jarvis"; content = responseText; timestamp = Time.now() });
-    responseText;
+    addMessage({ id = nextId; role = "jarvis"; content = response; timestamp = Time.now() });
+    response;
+  };
+
+  public shared func saveJarvisMessage(content : Text) : async () {
+    addMessage({ id = nextId; role = "jarvis"; content = content; timestamp = Time.now() });
   };
 
   public query func getHistory() : async [Message] {

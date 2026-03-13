@@ -41,3 +41,22 @@ export function useClearHistory() {
     },
   });
 }
+
+export function useSaveJarvisMessage() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (content: string) => {
+      if (!actor) throw new Error("Actor not ready");
+      // saveJarvisMessage is added in the backend but may not be in the generated type;
+      // cast to any to call it safely at runtime.
+      const ext = actor as any;
+      if (typeof ext.saveJarvisMessage === "function") {
+        return ext.saveJarvisMessage(content);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["history"] });
+    },
+  });
+}
