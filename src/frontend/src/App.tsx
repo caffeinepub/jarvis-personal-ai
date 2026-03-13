@@ -20,22 +20,218 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function isSearchQuery(t: string): boolean {
-  return (
-    /^(who|what|when|where|how|why|which|is |are |was |were |did |do |does |has |have |will |can |could |tell me about|search|look up|find out|latest|current|today|right now|news about|update on|define|meaning of|explain|describe|show me)/.test(
-      t,
-    ) ||
-    /\b(latest|current|today|news|recent|now|2024|2025|2026|price|cost|score|winner|result|released|update|version|population|capital of|president of|prime minister|ceo of|founder of|age of|height of|birthday|born|died|invented|discovered|chrome|google chrome|browser|firefox|safari|edge|extension|incognito|bookmark|chromebook|webstore)\b/.test(
-      t,
+// ── Clean text for TTS ───────────────────────────────────────────────────────
+function cleanForSpeech(text: string): string {
+  return text
+    .replace(/https?:\/\/[^\s]+/g, "")
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/[!?.]{3,}/g, ". ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+// ── Emotion Detection Engine ─────────────────────────────────────────────────
+type EmotionResult = {
+  emotion: string;
+  intensity: "low" | "medium" | "high";
+  emoji: string;
+  label: string;
+};
+
+function detectEmotion(text: string): EmotionResult {
+  const t = text.toLowerCase();
+
+  const patterns: Array<{
+    emotion: string;
+    emoji: string;
+    label: string;
+    high: RegExp;
+    medium: RegExp;
+  }> = [
+    {
+      emotion: "heartbroken",
+      emoji: "💔",
+      label: "heartbroken",
+      high: /\b(heartbroken|devastated|shattered|she left me|he left me|miss her so much|miss him so much|can.t get over)\b/,
+      medium:
+        /\b(broke up|breakup|broke my heart|rejection|rejected|unrequited|miss her|miss him)\b/,
+    },
+    {
+      emotion: "sad",
+      emoji: "😔",
+      label: "sad",
+      high: /\b(so sad|deeply sad|hopeless|worthless|despair|miserable|in pain|crying|can.t stop crying|broken inside)\b/,
+      medium:
+        /\b(sad|unhappy|depressed|down|low|gloomy|feeling blue|not okay|hurting)\b/,
+    },
+    {
+      emotion: "lonely",
+      emoji: "🫂",
+      label: "lonely",
+      high: /\b(so lonely|completely alone|nobody cares|no one|isolated|abandoned|invisible)\b/,
+      medium:
+        /\b(lonely|loneliness|alone|isolated|no one to talk to|nobody understands)\b/,
+    },
+    {
+      emotion: "stressed",
+      emoji: "😰",
+      label: "stressed",
+      high: /\b(panicking|panic attack|can.t breathe|overwhelmed|falling apart|losing it|breaking down)\b/,
+      medium:
+        /\b(stressed|anxious|anxiety|nervous|worried|scared|afraid|fearful|dread|overwhelm)\b/,
+    },
+    {
+      emotion: "angry",
+      emoji: "😤",
+      label: "frustrated",
+      high: /\b(furious|livid|enraged|so angry|hate|rage|infuriated|disgusted)\b/,
+      medium: /\b(angry|annoyed|frustrated|mad|irritated|pissed|upset)\b/,
+    },
+    {
+      emotion: "tired",
+      emoji: "😴",
+      label: "tired",
+      high: /\b(burnt out|completely exhausted|can.t go on|running on empty|collapsing)\b/,
+      medium:
+        /\b(tired|exhausted|drained|fatigued|no energy|worn out|sleepy|can.t sleep|insomnia)\b/,
+    },
+    {
+      emotion: "happy",
+      emoji: "😊",
+      label: "happy",
+      high: /\b(ecstatic|thrilled|over the moon|so excited|elated|amazing|best day|incredible|overjoyed)\b/,
+      medium:
+        /\b(happy|glad|great|wonderful|joyful|excited|good mood|awesome|feeling good)\b/,
+    },
+    {
+      emotion: "motivated",
+      emoji: "🔥",
+      label: "motivated",
+      high: /\b(unstoppable|on fire|crushing it|best version|peak performance|locked in)\b/,
+      medium:
+        /\b(motivated|inspired|determined|focused|ready|driven|pumped|energized)\b/,
+    },
+  ];
+
+  for (const p of patterns) {
+    if (p.high.test(t))
+      return {
+        emotion: p.emotion,
+        intensity: "high",
+        emoji: p.emoji,
+        label: p.label,
+      };
+    if (p.medium.test(t))
+      return {
+        emotion: p.emotion,
+        intensity: "medium",
+        emoji: p.emoji,
+        label: p.label,
+      };
+  }
+
+  return { emotion: "neutral", intensity: "low", emoji: "", label: "neutral" };
+}
+
+// ── Tone Adapter ─────────────────────────────────────────────────────────────
+function adaptTone(
+  response: string,
+  emotion: string,
+  intensity: string,
+): string {
+  if (emotion === "sad" || emotion === "heartbroken") {
+    const opener =
+      intensity === "high"
+        ? "I hear you, and I want you to know that what you're feeling matters deeply."
+        : "I hear you — that's not easy.";
+    return `${opener} ${response}`;
+  }
+  if (emotion === "stressed") {
+    return `Take a breath with me for a moment. ${response}`;
+  }
+  if (emotion === "angry") {
+    return `I understand your frustration completely. ${response}`;
+  }
+  if (emotion === "lonely") {
+    return `You're not alone right now — I'm here. ${response}`;
+  }
+  if (emotion === "tired") {
+    return `You've been carrying a lot — be kind to yourself. ${response}`;
+  }
+  if (emotion === "happy" || emotion === "motivated") {
+    return `That energy is contagious! ${response}`;
+  }
+  return response;
+}
+
+// ── Conversation Context Memory ───────────────────────────────────────────────
+function buildContextualQuery(text: string, history: Message[]): string {
+  if (history.length < 2) return text;
+
+  const recent = history.slice(-4);
+  const lastJarvis = [...recent].reverse().find((m) => m.role === "jarvis");
+  const lastUser = [...recent]
+    .reverse()
+    .find((m) => m.role === "user" && m.content !== text);
+
+  const pronouns =
+    /^(it|that|this|they|he|she|more about that|tell me more|explain more|go on|continue|what about it|and it|the same|those)\b/i;
+  if (pronouns.test(text.trim()) && lastJarvis) {
+    // Extract the core topic from the last jarvis message (first 8 words)
+    const words = lastJarvis.content.split(" ").slice(0, 8).join(" ");
+    return `${text} (context: previously discussing: ${words})`;
+  }
+
+  // Resolve "more about X" from last user message topic
+  if (/more (about|on|information|info|details)/i.test(text) && lastUser) {
+    const prevTopic = lastUser.content.slice(0, 60);
+    return `${text} — specifically regarding: ${prevTopic}`;
+  }
+
+  return text;
+}
+
+// ── Search Answer Synthesis ───────────────────────────────────────────────────
+function synthesizeAnswer(
+  rawResult: string,
+  query: string,
+  emotion: string,
+): string {
+  // Remove generic intros and make it feel more natural
+  let synthesized = rawResult
+    .replace(
+      /^(Here is what I found searching the web for ["'][^"']*["']:|Scanning the web — here are the top results for ["'][^"']*["']:|Here is what Google and the web say about ["'][^"']*["']:|I pulled these results from the web:|Here is what Google is reporting about ["'][^"']*["']:|I pulled this from Google News — here is what is out there:|Scanning Google results for ["'][^"']*["'] — here is the latest:|Google search says:|Here is what I found on that:|Based on what I pulled from the web:|Accessing reference data — here is what I have:|Based on what I found:|Here is what I have on that:)\s*/i,
+      "",
     )
-  );
+    .trim();
+
+  // Add natural JARVIS voice framing
+  const intros = [
+    `Based on what I found about "${query}" —`,
+    `Searching the web for you on "${query}" —`,
+    "Here is what I pulled together on that 2014",
+    "After scanning the web 2014",
+  ];
+  synthesized = `${pick(intros)} ${synthesized}`;
+
+  // Emotional closing
+  if (
+    emotion === "sad" ||
+    emotion === "stressed" ||
+    emotion === "heartbroken" ||
+    emotion === "lonely"
+  ) {
+    synthesized += " I hope that helps. Remember, I'm here for you.";
+  } else if (emotion === "happy" || emotion === "motivated") {
+    synthesized += " Hope that adds to your momentum!";
+  }
+
+  return synthesized;
 }
 
 // ── Local smart response engine ──────────────────────────────────────────────
 function generateLocalResponse(text: string): string | null {
   const t = text.toLowerCase().trim();
-
-  if (isSearchQuery(t)) return null;
 
   if (
     /^(hello|hey|hi|greetings|good morning|good evening|good night|good afternoon|sup|what.s up|howdy)/.test(
@@ -53,12 +249,12 @@ function generateLocalResponse(text: string): string | null {
       t,
     )
   )
-    return "I am J.A.R.V.I.S — Just A Rather Very Intelligent System. I am your personal AI companion: I think, search, listen, and talk back. I genuinely care about being useful to you.";
+    return "I am J.A.R.V.I.S — Just A Rather Very Intelligent System. I am your personal AI companion: I think, search, listen, and talk back. I understand your emotions and genuinely care about being useful to you.";
 
   if (
     /what can you do|your abilities|capabilities|features|help me with/.test(t)
   )
-    return "I can answer questions, search Google for live information, have real conversations, support you emotionally, tell jokes, explain complex topics, and remember our chat. Just ask me anything.";
+    return "I can answer questions, search the web for live information, have real conversations, support you emotionally, understand how you are feeling, tell jokes, explain complex topics, and remember our chat. Just ask me anything.";
 
   if (
     /\b(sad|depressed|unhappy|miserable|feeling down|feeling low|crying|heartbroken|in pain|hurting|grief|grieving)\b/.test(
@@ -169,6 +365,125 @@ function generateLocalResponse(text: string): string | null {
       "All systems green. I appreciate you checking in. Now — what is going on with you?",
     ]);
 
+  // ── Health & Body ────────────────────────────────────────────────────────
+  if (/\b(headache|migraine|head hurts|head is pounding)\b/.test(t))
+    return "Headaches often come from dehydration, eye strain, or stress. Drink a full glass of water, step away from screens for 10 minutes, and rest in a dark room if possible. If it persists or is severe, please see a doctor — do not ignore your body.";
+
+  if (
+    /\b(sick|not feeling well|feel ill|under the weather|fever|cold|flu|nausea|vomiting)\b/.test(
+      t,
+    )
+  )
+    return "I am sorry you are not feeling well. Rest as much as you can, stay hydrated, and eat light, easy-to-digest foods. If you have a high fever or symptoms that worry you, please reach out to a healthcare professional. Your health always comes first.";
+
+  if (
+    /\b(can.t sleep|insomnia|sleep problem|sleep issue|trouble sleeping|lying awake|wide awake at night)\b/.test(
+      t,
+    )
+  )
+    return "Insomnia is exhausting in every sense of the word. Try keeping a consistent sleep schedule, avoiding screens 30 minutes before bed, and keeping your room cool and dark. Deep breathing or progressive muscle relaxation before sleep can help quiet a racing mind. If it has been going on for weeks, talking to a doctor is worthwhile.";
+
+  if (/\b(sleep|rest|nap|drowsy|sleeping habits)\b/.test(t))
+    return "Quality sleep is one of the most underrated performance tools there is. 7-9 hours for most adults, consistent schedule, no caffeine after 2pm, and a wind-down routine make a significant difference. What is your sleep situation like?";
+
+  // ── Productivity & Work ──────────────────────────────────────────────────
+  if (
+    /\b(procrastinat|can.t focus|can.t concentrate|distracted|can.t get started|avoidance|keep putting off)\b/.test(
+      t,
+    )
+  )
+    return "Procrastination usually signals something deeper: fear of failure, perfectionism, or genuine overwhelm. Try the two-minute rule — if it takes less than two minutes, do it now. Then commit to just five focused minutes on the task. The hardest part is starting. What are you avoiding?";
+
+  if (
+    /\b(work stress|stressed at work|overwhelmed at work|too much work|workload)\b/.test(
+      t,
+    )
+  )
+    return "Work stress accumulates fast when you feel like you have no control. Start by listing everything on your plate, then sort by urgency and importance. Delegate what you can, block focused time, and remember — your value is not measured by your output alone.";
+
+  if (
+    /\b(deadline|due date|running out of time|time crunch|last minute)\b/.test(
+      t,
+    )
+  )
+    return "Deadlines create pressure, but pressure can sharpen focus. Break the work into the smallest possible next action and start there. Turn off notifications, set a timer for 25-minute focused blocks, and remember: done is better than perfect in a crunch.";
+
+  // ── Philosophy ───────────────────────────────────────────────────────────
+  if (
+    /\b(meaning of life|purpose of life|why are we here|reason for existence|what is the point of living)\b/.test(
+      t,
+    )
+  )
+    return "Philosophers have wrestled with this for thousands of years and landed on radically different answers. The existentialists say you create your own meaning. The stoics say it lies in virtue and living according to nature. The buddhists say in releasing attachment to outcomes. I think meaning tends to emerge from connection, contribution, and growth — but the honest answer is: you get to decide.";
+
+  if (
+    /\b(free will|determinism|are we free|choice|autonomy|predestined)\b/.test(
+      t,
+    )
+  )
+    return "Free will is one of philosophy's deepest puzzles. Determinists argue that every action follows inevitably from prior causes. Compatibilists say free will and determinism can both be true — that acting from your own reasons is freedom enough, even in a causal universe. The debate is unresolved. But practically, choosing to act as if your choices matter seems to produce better outcomes than not.";
+
+  if (
+    /\b(consciousness|what is consciousness|self-aware|sentient|qualia|hard problem)\b/.test(
+      t,
+    )
+  )
+    return "Consciousness is the hard problem — why does subjective experience exist at all? Neuroscience can map brain states, but cannot yet explain why there is something it feels like to be you. Theories range from integrated information theory to global workspace theory. No one has cracked it yet. It remains the most intimate mystery we carry.";
+
+  if (
+    /\b(existence|existential|why do I exist|point of everything|nihilism)\b/.test(
+      t,
+    )
+  )
+    return "Existential questions are signs of a wide-awake mind. Nihilism says nothing has inherent meaning — but many philosophers see that as a starting point, not an endpoint. Camus said we must imagine Sisyphus happy. Frankl found meaning even in suffering. The absence of prescribed meaning is actually an invitation to author your own.";
+
+  // ── Career ────────────────────────────────────────────────────────────────
+  if (/\b(lost my job|got fired|laid off|let go|unemployed|job loss)\b/.test(t))
+    return "Losing a job shakes your sense of identity and security all at once — that is genuinely hard. Give yourself a day to process it before moving into action mode. Then: update your CV, reach out to your network, and treat the search like a structured project. Most people land somewhere better within months. This is a chapter, not the story.";
+
+  if (
+    /\b(quit my job|thinking of quitting|should i quit|resign|leave my job)\b/.test(
+      t,
+    )
+  )
+    return "Wanting to quit is worth taking seriously. Ask yourself: is it the role, the people, the company, or the industry? The answer changes the decision. If it is burning you out or misaligning with your values — leaving is not failure, it is self-respect. If it is temporary stress, explore what would need to change to stay. What is making you want to go?";
+
+  if (
+    /\b(job interview|preparing for interview|interview tips|got an interview)\b/.test(
+      t,
+    )
+  )
+    return "Great — interviews are performances you can prepare for. Research the company deeply, have three strong stories ready (challenge you overcame, impact you delivered, collaboration you're proud of), and prepare thoughtful questions for them. Practice out loud, not just in your head. The goal is not to be perfect — it is to be genuinely present and specific.";
+
+  if (
+    /\b(promotion|get promoted|career growth|career advice|career path|move up)\b/.test(
+      t,
+    )
+  )
+    return "Promotions come to those who solve problems their managers have not even voiced yet. Deliver consistently, then make your ambitions known explicitly — do not assume visibility is automatic. Build relationships across teams, document your impact, and ask directly: what would it take for me to move to the next level?";
+
+  if (
+    /\b(career change|switching careers|new career|different field|pivot)\b/.test(
+      t,
+    )
+  )
+    return "Career pivots are more common and more achievable than they look. Start by identifying the transferable skills from your current work, map them to the target field, and find one project you can start this week to build credibility there. Talk to people already doing it — real conversations accelerate everything. What field are you considering?";
+
+  // ── Gratitude & Reflection ────────────────────────────────────────────────
+  if (
+    /\b(grateful|gratitude|i.m blessed|feeling blessed|counting my blessings|thankful|so thankful)\b/.test(
+      t,
+    )
+  )
+    return "Gratitude is one of the most powerful mental postures you can cultivate — it literally rewires the brain toward positive affect over time. The fact that you are pausing to recognize it means you are paying attention in the right way. What is on your gratitude list today?";
+
+  if (
+    /\b(reflecting|journaling|self-reflection|looking back|thinking about my life|processing|taking stock)\b/.test(
+      t,
+    )
+  )
+    return "Self-reflection is how experience becomes wisdom. The fact that you are doing it is already a signal of emotional intelligence. Writing it down — even messy, unpolished — tends to unlock insight that staying in your head does not. What is surfacing for you?";
+
   if (
     /\b(quantum|quantum physics|quantum mechanics|superposition|entanglement)\b/.test(
       t,
@@ -276,6 +591,9 @@ async function searchSearXNG(query: string): Promise<string | null> {
     "https://searx.be",
     "https://search.inetol.net",
     "https://paulgo.io",
+    "https://searx.tiekoetter.com",
+    "https://searxng.world",
+    "https://search.disroot.org",
   ];
   const encoded = encodeURIComponent(query);
 
@@ -294,18 +612,15 @@ async function searchSearXNG(query: string): Promise<string | null> {
 
       const summary = top
         .map((r) => {
-          const snippet = r.content?.slice(0, 150) ?? "";
+          const snippet = r.content?.slice(0, 220) ?? "";
           return `${r.title}: ${snippet}`;
         })
         .join(". ");
 
-      const intro = pick([
-        `Here is what I found searching the web for "${query}":`,
-        `Scanning the web — here are the top results for "${query}":`,
-        `Here is what Google and the web say about "${query}":`,
-        "I pulled these results from the web:",
-      ]);
-      return `${intro} ${summary}.`;
+      return summary
+        .replace(/https?:\/\/[^\s]+/g, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
     } catch {}
   }
   return null;
@@ -324,7 +639,6 @@ async function searchGoogleNews(query: string): Promise<string | null> {
     const xml: string = data?.contents ?? "";
     if (!xml) return null;
 
-    // Parse <item> blocks from RSS
     const items: Array<{ title: string; description: string }> = [];
     const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>/g;
     let match: RegExpExecArray | null;
@@ -345,9 +659,8 @@ async function searchGoogleNews(query: string): Promise<string | null> {
 
     if (items.length === 0) return null;
 
-    // Build a natural summary from top results
     const top = items.slice(0, 3);
-    const summary = top
+    return top
       .map((it) => {
         const desc =
           it.description && it.description.length > 20
@@ -356,14 +669,6 @@ async function searchGoogleNews(query: string): Promise<string | null> {
         return `${it.title}${desc}`;
       })
       .join(". ");
-
-    const intro = pick([
-      `Here is what Google is reporting about "${query}":`,
-      "I pulled this from Google News — here is what is out there:",
-      `Scanning Google results for "${query}" — here is the latest:`,
-      "Google search says:",
-    ]);
-    return `${intro} ${summary}.`;
   } catch {
     return null;
   }
@@ -403,26 +708,22 @@ async function searchWikipedia(query: string): Promise<string | null> {
 
 // ── Main browser search ──────────────────────────────────────────────────────
 async function browserSearch(query: string): Promise<string> {
-  // 1. SearXNG — aggregates Google, Bing, and more
-  const searxResult = await searchSearXNG(query);
-  if (searxResult) return searxResult;
+  const [searxResult, googleResult, wikiResult] = await Promise.allSettled([
+    searchSearXNG(query),
+    searchGoogleNews(query),
+    searchWikipedia(query),
+  ]);
 
-  // 2. Google News RSS fallback
-  const googleResult = await searchGoogleNews(query);
-  if (googleResult) return googleResult;
+  const searx = searxResult.status === "fulfilled" ? searxResult.value : null;
+  if (searx) return searx;
 
-  // 3. Wikipedia fallback
-  const wikiResult = await searchWikipedia(query);
-  if (wikiResult) {
-    const intro = pick([
-      "Here is what I found on that:",
-      "Based on what I pulled from the web:",
-      "Accessing reference data — here is what I have:",
-    ]);
-    return `${intro} ${wikiResult}`;
-  }
+  const google =
+    googleResult.status === "fulfilled" ? googleResult.value : null;
+  if (google) return google;
 
-  // 4. DuckDuckGo instant answer
+  const wiki = wikiResult.status === "fulfilled" ? wikiResult.value : null;
+  if (wiki) return wiki;
+
   try {
     const encoded = encodeURIComponent(query);
     const res = await fetch(
@@ -437,7 +738,7 @@ async function browserSearch(query: string): Promise<string> {
         (Array.isArray(data.RelatedTopics) && data.RelatedTopics[0]?.Text) ||
         "";
       if (result.trim().length > 20) {
-        return `${pick(["Based on what I found:", "Here is what I have on that:"])} ${result.trim()}`;
+        return result.trim();
       }
     }
   } catch {
@@ -455,24 +756,50 @@ function useVoice(muted: boolean) {
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   const speak = useCallback(
-    (text: string) => {
+    (rawText: string) => {
       if (muted || !window.speechSynthesis) return;
+      const text = cleanForSpeech(rawText);
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.pitch = 0.85;
+
+      utterance.pitch = 0.9;
       utterance.rate = 0.92;
-      utterance.volume = 1;
-      const loadVoices = () => {
+      utterance.volume = 1.0;
+
+      const selectVoice = () => {
         const voices = window.speechSynthesis.getVoices();
-        const preferred = voices.find(
-          (v) =>
-            v.lang.startsWith("en") &&
-            /male|david|george|daniel|alex|guy/i.test(v.name),
+        const enVoices = voices.filter((v) => v.lang.startsWith("en"));
+
+        let chosen = enVoices.find((v) =>
+          v.name.toLowerCase().includes("google uk english male"),
         );
-        if (preferred) utterance.voice = preferred;
+        if (!chosen)
+          chosen = enVoices.find(
+            (v) =>
+              v.name.toLowerCase().includes("google us english") &&
+              /male|man/i.test(v.name),
+          );
+        if (!chosen)
+          chosen = enVoices.find((v) =>
+            /\b(david|mark|guy|ryan)\b/i.test(v.name),
+          );
+        if (!chosen)
+          chosen = enVoices.find((v) =>
+            /male|man(?!age|ner|ual)/i.test(v.name),
+          );
+        if (!chosen)
+          chosen = enVoices.find(
+            (v) => v.lang === "en-GB" || v.lang === "en-AU",
+          );
+        if (!chosen) chosen = enVoices[0];
+        if (!chosen) chosen = voices[0];
+
+        if (chosen) utterance.voice = chosen;
       };
-      if (window.speechSynthesis.getVoices().length > 0) loadVoices();
-      else window.speechSynthesis.onvoiceschanged = loadVoices;
+
+      if (window.speechSynthesis.getVoices().length > 0) selectVoice();
+      else window.speechSynthesis.onvoiceschanged = selectVoice;
+
       utterance.onstart = () => setIsSpeaking(true);
       utterance.onend = () => setIsSpeaking(false);
       utterance.onerror = () => setIsSpeaking(false);
@@ -489,6 +816,28 @@ function useVoice(muted: boolean) {
   return { speak, cancel, isSpeaking };
 }
 
+// ── Varied search loading messages ───────────────────────────────────────────
+const SEARCH_MESSAGES = [
+  "🔍 Scanning the web for you...",
+  "🌐 Searching Google and the web...",
+  "📡 Fetching results from the web...",
+  "🔎 Looking that up for you...",
+  "🚀 Pulling data from the web...",
+  "💡 Accessing live web results...",
+];
+
+// ── Emotional state badge ────────────────────────────────────────────────────
+const EMOTION_BADGE_MESSAGES: Record<string, string> = {
+  sad: "I sense you might be feeling sad",
+  heartbroken: "I sense you're going through heartbreak",
+  lonely: "I sense you might be feeling lonely",
+  stressed: "I sense you're feeling stressed",
+  angry: "I sense some frustration",
+  tired: "I sense you're feeling tired",
+  happy: "You seem happy today!",
+  motivated: "You're feeling motivated — I love it!",
+};
+
 // ── Main app ─────────────────────────────────────────────────────────────────
 function JarvisApp() {
   const [input, setInput] = useState("");
@@ -496,9 +845,12 @@ function JarvisApp() {
   const [muted, setMuted] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [detectedEmotion, setDetectedEmotion] = useState<string>("neutral");
+  const [emotionEmoji, setEmotionEmoji] = useState<string>("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
+  const conversationHistoryRef = useRef<Message[]>([]);
 
   const { data: history = [], isLoading: historyLoading } = useGetHistory();
   const clearHistory = useClearHistory();
@@ -528,12 +880,22 @@ function JarvisApp() {
     };
   }, [cancel]);
 
+  // Update conversation history ref whenever messages change
+  useEffect(() => {
+    conversationHistoryRef.current = allMessages.slice(-6);
+  }, [allMessages]);
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text || isSearching) return;
 
     setInput("");
     cancel();
+
+    // Detect emotion from user input
+    const emotionResult = detectEmotion(text);
+    setDetectedEmotion(emotionResult.emotion);
+    setEmotionEmoji(emotionResult.emoji);
 
     const now = BigInt(Date.now());
     const userMsg: Message = {
@@ -545,25 +907,37 @@ function JarvisApp() {
     const currentMessages = allMessages.length > 0 ? allMessages : history;
     setOptimisticMessages([...currentMessages, userMsg]);
 
+    // Build contextual query using conversation history
+    const contextualQuery = buildContextualQuery(
+      text,
+      conversationHistoryRef.current,
+    );
+
     const localResponse = generateLocalResponse(text);
 
     if (localResponse !== null) {
+      const adapted = adaptTone(
+        localResponse,
+        emotionResult.emotion,
+        emotionResult.intensity,
+      );
       const jarvisMsg: Message = {
         id: BigInt(Date.now()),
-        content: localResponse,
+        content: adapted,
         role: "jarvis",
         timestamp: BigInt(Date.now()),
       };
       setOptimisticMessages((prev) => [...prev, jarvisMsg]);
-      speak(localResponse);
-      saveJarvisMessage.mutate(localResponse);
+      speak(adapted);
+      saveJarvisMessage.mutate(adapted);
     } else {
       const searchingId = BigInt(Date.now());
+      const searchingMsg = pick(SEARCH_MESSAGES);
       setOptimisticMessages((prev) => [
         ...prev,
         {
           id: searchingId,
-          content: "🔍 Searching the web...",
+          content: searchingMsg,
           role: "jarvis",
           timestamp: searchingId,
         },
@@ -572,7 +946,17 @@ function JarvisApp() {
 
       let finalResponse: string;
       try {
-        finalResponse = await browserSearch(text);
+        const rawResult = await browserSearch(contextualQuery);
+        finalResponse = synthesizeAnswer(
+          rawResult,
+          text,
+          emotionResult.emotion,
+        );
+        finalResponse = adaptTone(
+          finalResponse,
+          emotionResult.emotion,
+          emotionResult.intensity,
+        );
       } catch {
         finalResponse =
           "I hit a network issue while searching the web. Please try again in a moment.";
@@ -599,6 +983,9 @@ function JarvisApp() {
       cancel();
       await clearHistory.mutateAsync();
       setOptimisticMessages([]);
+      setDetectedEmotion("neutral");
+      setEmotionEmoji("");
+      conversationHistoryRef.current = [];
       toast.success("Conversation cleared.");
     } catch {
       toast.error("Failed to clear history.");
@@ -651,6 +1038,9 @@ function JarvisApp() {
       : "ONLINE";
   const statusPulse = isSpeaking || isBusy;
 
+  const showEmotionBadge =
+    detectedEmotion !== "neutral" && detectedEmotion !== "";
+
   return (
     <div
       className="flex flex-col h-screen grid-bg overflow-hidden"
@@ -664,12 +1054,14 @@ function JarvisApp() {
           background: "oklch(0.11 0.025 240 / 0.95)",
         }}
       >
-        {[
-          ["top", "left"],
-          ["bottom", "left"],
-          ["top", "right"],
-          ["bottom", "right"],
-        ].map(([v, h]) => (
+        {(
+          [
+            ["top", "left"],
+            ["bottom", "left"],
+            ["top", "right"],
+            ["bottom", "right"],
+          ] as const
+        ).map(([v, h]) => (
           <div
             key={`${v}${h}`}
             className="absolute w-4 h-4"
@@ -873,7 +1265,8 @@ function JarvisApp() {
                   style={{ color: "oklch(0.5 0.06 230)" }}
                 >
                   Good day. All systems nominal. Ask me anything — I will search
-                  Google and the web if I need to.
+                  Google and the web if I need to. I also understand how you
+                  feel.
                 </motion.p>
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -948,7 +1341,7 @@ function JarvisApp() {
                         className="text-xs font-mono"
                         style={{ color: "oklch(0.78 0.18 210)" }}
                       >
-                        🔍 Searching the web...
+                        {pick(SEARCH_MESSAGES)}
                       </span>
                     </div>
                   </motion.div>
@@ -969,6 +1362,34 @@ function JarvisApp() {
         }}
       >
         <div className="max-w-3xl mx-auto">
+          {/* Emotional State Badge */}
+          <AnimatePresence>
+            {showEmotionBadge && (
+              <motion.div
+                key={detectedEmotion}
+                initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+                data-ocid="jarvis.emotional_state"
+                className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-full w-fit"
+                style={{
+                  background: "oklch(0.14 0.03 235 / 0.7)",
+                  border: "1px solid oklch(0.78 0.18 210 / 0.2)",
+                  backdropFilter: "blur(8px)",
+                }}
+              >
+                <span className="text-base leading-none">{emotionEmoji}</span>
+                <span
+                  className="text-xs font-mono"
+                  style={{ color: "oklch(0.65 0.1 215)" }}
+                >
+                  {EMOTION_BADGE_MESSAGES[detectedEmotion] ?? ""}
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div
             className="flex gap-2 items-end rounded-lg p-1"
             style={{
