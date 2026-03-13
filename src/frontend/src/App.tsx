@@ -196,6 +196,7 @@ function synthesizeAnswer(
   rawResult: string,
   query: string,
   emotion: string,
+  source?: string,
 ): string {
   // Remove generic intros and make it feel more natural
   let synthesized = rawResult
@@ -205,14 +206,29 @@ function synthesizeAnswer(
     )
     .trim();
 
-  // Add natural JARVIS voice framing
-  const intros = [
-    `Based on what I found about "${query}" —`,
-    `Searching the web for you on "${query}" —`,
-    "Here is what I pulled together on that 2014",
-    "After scanning the web 2014",
-  ];
-  synthesized = `${pick(intros)} ${synthesized}`;
+  // Source-aware intro
+  if (source === "ai-news") {
+    synthesized = `Here is the latest on AI: ${synthesized}`;
+  } else if (source === "google-news") {
+    synthesized = pick([
+      `According to Google News — ${synthesized}`,
+      `Google News is reporting — ${synthesized}`,
+      `Here is what Google News has on that — ${synthesized}`,
+    ]);
+  } else if (source === "wikipedia") {
+    synthesized = pick([
+      `Here is what I found on Wikipedia about "${query}" — ${synthesized}`,
+      `According to Wikipedia — ${synthesized}`,
+    ]);
+  } else {
+    const intros = [
+      `Based on what I found about "${query}" —`,
+      `Searching the web for you on "${query}" —`,
+      "Here is what I pulled from the web on that —",
+      "After scanning multiple sources —",
+    ];
+    synthesized = `${pick(intros)} ${synthesized}`;
+  }
 
   // Emotional closing
   if (
@@ -706,24 +722,108 @@ async function searchWikipedia(query: string): Promise<string | null> {
   return null;
 }
 
+// ── Query type helpers ───────────────────────────────────────────────────────
+function isNewsQuery(query: string): boolean {
+  return /\b(news|latest|today|current|update|recent|2024|2025|2026|breaking|happening|announced|released|launched)\b/i.test(
+    query,
+  );
+}
+
+function isAIQuery(query: string): boolean {
+  return /\b(chatgpt|gemini|openai|artificial intelligence|machine learning|llm|neural network|deep learning|claude|gpt|bard|copilot|midjourney|stable diffusion|\bai\b|robot|automation|language model|generative ai|diffusion model)\b/i.test(
+    query,
+  );
+}
+
+async function searchGoogleNewsAI(query: string): Promise<string | null> {
+  const boostedQuery = `artificial intelligence ${query}`;
+  const encoded = encodeURIComponent(boostedQuery);
+  const rssUrl = `https://news.google.com/rss/search?q=${encoded}&hl=en-US&gl=US&ceid=US:en`;
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
+
+  try {
+    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const xml: string = data?.contents ?? "";
+    if (!xml) return null;
+
+    const items: Array<{ title: string; description: string }> = [];
+    const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>/g;
+    let match: RegExpExecArray | null;
+    // biome-ignore lint/suspicious/noAssignInExpressions: regex loop
+    while ((match = itemRegex.exec(xml)) !== null && items.length < 5) {
+      const block = match[1];
+      const titleMatch =
+        block.match(/<title[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) ||
+        block.match(/<title[^>]*>([\s\S]*?)<\/title>/);
+      const descMatch =
+        block.match(
+          /<description[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/description>/,
+        ) || block.match(/<description[^>]*>([\s\S]*?)<\/description>/);
+      const title = stripHtml(titleMatch?.[1] ?? "");
+      const description = stripHtml(descMatch?.[1] ?? "");
+      if (title && title.length > 5) items.push({ title, description });
+    }
+
+    if (items.length === 0) return null;
+    const top = items.slice(0, 3);
+    return top
+      .map((it) => {
+        const desc =
+          it.description && it.description.length > 20
+            ? ` — ${it.description.slice(0, 120)}`
+            : "";
+        return `${it.title}${desc}`;
+      })
+      .join(". ");
+  } catch {
+    return null;
+  }
+}
+
 // ── Main browser search ──────────────────────────────────────────────────────
-async function browserSearch(query: string): Promise<string> {
-  const [searxResult, googleResult, wikiResult] = await Promise.allSettled([
+async function browserSearch(
+  query: string,
+): Promise<{ text: string; source: string }> {
+  const newsQuery = isNewsQuery(query);
+  const aiQuery = isAIQuery(query);
+
+  const promises: Array<Promise<string | null>> = [
     searchSearXNG(query),
     searchGoogleNews(query),
     searchWikipedia(query),
-  ]);
+  ];
+  if (aiQuery) {
+    promises.push(searchGoogleNewsAI(query));
+  }
+
+  const settled = await Promise.allSettled(promises);
+  const [searxResult, googleResult, wikiResult, aiResult] = settled;
 
   const searx = searxResult.status === "fulfilled" ? searxResult.value : null;
-  if (searx) return searx;
-
   const google =
     googleResult.status === "fulfilled" ? googleResult.value : null;
-  if (google) return google;
-
   const wiki = wikiResult.status === "fulfilled" ? wikiResult.value : null;
-  if (wiki) return wiki;
+  const ai =
+    aiResult && aiResult.status === "fulfilled" ? aiResult.value : null;
 
+  // AI query: prioritize AI-boosted news
+  if (aiQuery && ai) return { text: ai, source: "ai-news" };
+
+  // News query: prioritize Google News, then SearX
+  if (newsQuery) {
+    if (google) return { text: google, source: "google-news" };
+    if (searx) return { text: searx, source: "searx" };
+    if (wiki) return { text: wiki, source: "wikipedia" };
+  } else {
+    // Factual query: SearX first (best breadth), then Wikipedia, then Google News
+    if (searx) return { text: searx, source: "searx" };
+    if (wiki) return { text: wiki, source: "wikipedia" };
+    if (google) return { text: google, source: "google-news" };
+  }
+
+  // DuckDuckGo last resort
   try {
     const encoded = encodeURIComponent(query);
     const res = await fetch(
@@ -738,17 +838,20 @@ async function browserSearch(query: string): Promise<string> {
         (Array.isArray(data.RelatedTopics) && data.RelatedTopics[0]?.Text) ||
         "";
       if (result.trim().length > 20) {
-        return result.trim();
+        return { text: result.trim(), source: "ddg" };
       }
     }
   } catch {
     // fall through
   }
 
-  return pick([
-    `I searched the web for "${query}" but could not pull a clear result right now. Try rephrasing, or ask me something more specific.`,
-    "I could not find a definitive answer for that one. It is possible my search sources do not cover it well — try asking in a different way.",
-  ]);
+  return {
+    text: pick([
+      `I searched the web for "${query}" but could not pull a clear result right now. Try rephrasing, or ask me something more specific.`,
+      "I could not find a definitive answer for that one. It is possible my search sources do not cover it well — try asking in a different way.",
+    ]),
+    source: "fallback",
+  };
 }
 
 // ── Voice hook ──────────────────────────────────────────────────────────────
@@ -946,11 +1049,12 @@ function JarvisApp() {
 
       let finalResponse: string;
       try {
-        const rawResult = await browserSearch(contextualQuery);
+        const searchResult = await browserSearch(contextualQuery);
         finalResponse = synthesizeAnswer(
-          rawResult,
+          searchResult.text,
           text,
           emotionResult.emotion,
+          searchResult.source,
         );
         finalResponse = adaptTone(
           finalResponse,
