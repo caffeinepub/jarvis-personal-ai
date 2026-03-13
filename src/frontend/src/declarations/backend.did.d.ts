@@ -19,6 +19,7 @@ export interface Message {
 export interface _SERVICE {
   'clearHistory' : ActorMethod<[], undefined>,
   'getHistory' : ActorMethod<[], Array<Message>>,
+  'getMessageCount' : ActorMethod<[], bigint>,
   'sendMessage' : ActorMethod<[string], string>,
 }
 export declare const idlService: IDL.ServiceClass;

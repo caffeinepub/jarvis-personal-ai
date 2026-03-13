@@ -98,6 +98,7 @@ export interface Message {
 export interface backendInterface {
     clearHistory(): Promise<void>;
     getHistory(): Promise<Array<Message>>;
+    getMessageCount(): Promise<bigint>;
     sendMessage(userText: string): Promise<string>;
 }
 export class Backend implements backendInterface {
@@ -127,6 +128,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.getHistory();
+            return result;
+        }
+    }
+    async getMessageCount(): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getMessageCount();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getMessageCount();
             return result;
         }
     }

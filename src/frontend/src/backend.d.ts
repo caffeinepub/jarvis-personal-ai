@@ -16,5 +16,6 @@ export interface Message {
 export interface backendInterface {
     clearHistory(): Promise<void>;
     getHistory(): Promise<Array<Message>>;
+    getMessageCount(): Promise<bigint>;
     sendMessage(userText: string): Promise<string>;
 }

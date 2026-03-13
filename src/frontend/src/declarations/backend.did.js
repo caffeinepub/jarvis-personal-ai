@@ -18,6 +18,7 @@ export const Message = IDL.Record({
 export const idlService = IDL.Service({
   'clearHistory' : IDL.Func([], [], []),
   'getHistory' : IDL.Func([], [IDL.Vec(Message)], ['query']),
+  'getMessageCount' : IDL.Func([], [IDL.Nat], ['query']),
   'sendMessage' : IDL.Func([IDL.Text], [IDL.Text], []),
 });
 
@@ -34,6 +35,7 @@ export const idlFactory = ({ IDL }) => {
   return IDL.Service({
     'clearHistory' : IDL.Func([], [], []),
     'getHistory' : IDL.Func([], [IDL.Vec(Message)], ['query']),
+    'getMessageCount' : IDL.Func([], [IDL.Nat], ['query']),
     'sendMessage' : IDL.Func([IDL.Text], [IDL.Text], []),
   });
 };
