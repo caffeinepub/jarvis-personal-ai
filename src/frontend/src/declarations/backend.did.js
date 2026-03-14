@@ -17,9 +17,16 @@ export const Message = IDL.Record({
 
 export const idlService = IDL.Service({
   'clearHistory' : IDL.Func([], [], []),
+  'deleteApiKey' : IDL.Func([IDL.Text], [], []),
+  'getApiKey' : IDL.Func([IDL.Text], [IDL.Opt(IDL.Text)], ['query']),
   'getHistory' : IDL.Func([], [IDL.Vec(Message)], ['query']),
-  'getMessageCount' : IDL.Func([], [IDL.Nat], ['query']),
+  'isAdminPasswordSet' : IDL.Func([], [IDL.Bool], ['query']),
+  'listApiKeyNames' : IDL.Func([], [IDL.Vec(IDL.Text)], ['query']),
+  'saveJarvisMessage' : IDL.Func([IDL.Text], [], []),
   'sendMessage' : IDL.Func([IDL.Text], [IDL.Text], []),
+  'setAdminPassword' : IDL.Func([IDL.Text], [], []),
+  'setApiKey' : IDL.Func([IDL.Text, IDL.Text], [], []),
+  'verifyAdminPassword' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
 });
 
 export const idlInitArgs = [];
@@ -34,9 +41,16 @@ export const idlFactory = ({ IDL }) => {
   
   return IDL.Service({
     'clearHistory' : IDL.Func([], [], []),
+    'deleteApiKey' : IDL.Func([IDL.Text], [], []),
+    'getApiKey' : IDL.Func([IDL.Text], [IDL.Opt(IDL.Text)], ['query']),
     'getHistory' : IDL.Func([], [IDL.Vec(Message)], ['query']),
-    'getMessageCount' : IDL.Func([], [IDL.Nat], ['query']),
+    'isAdminPasswordSet' : IDL.Func([], [IDL.Bool], ['query']),
+    'listApiKeyNames' : IDL.Func([], [IDL.Vec(IDL.Text)], ['query']),
+    'saveJarvisMessage' : IDL.Func([IDL.Text], [], []),
     'sendMessage' : IDL.Func([IDL.Text], [IDL.Text], []),
+    'setAdminPassword' : IDL.Func([IDL.Text], [], []),
+    'setApiKey' : IDL.Func([IDL.Text, IDL.Text], [], []),
+    'verifyAdminPassword' : IDL.Func([IDL.Text], [IDL.Bool], ['query']),
   });
 };
 

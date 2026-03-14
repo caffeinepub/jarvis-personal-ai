@@ -2,7 +2,16 @@ import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { Textarea } from "@/components/ui/textarea";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Mic, MicOff, Send, Trash2, Volume2, VolumeX, Zap } from "lucide-react";
+import {
+  Mic,
+  MicOff,
+  Send,
+  Settings,
+  Trash2,
+  Volume2,
+  VolumeX,
+  Zap,
+} from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -13,6 +22,8 @@ import {
   useSaveJarvisMessage,
 } from "./hooks/useQueries";
 
+import { AdminPanel } from "./components/AdminPanel";
+
 const queryClient = new QueryClient();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -20,7 +31,6 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// ── Clean text for TTS ───────────────────────────────────────────────────────
 function cleanForSpeech(text: string): string {
   return text
     .replace(/https?:\/\/[^\s]+/g, "")
@@ -29,6 +39,42 @@ function cleanForSpeech(text: string): string {
     .replace(/\s{2,}/g, " ")
     .trim();
 }
+
+// ── Response Variety Banks ───────────────────────────────────────────────────
+const GREETINGS = [
+  "Hey! Great to hear from you. What's on your mind?",
+  "Yo! What's up? I'm all ears.",
+  "Hey there! Ready to help — what do you need?",
+  "Hey! How can I help you out today?",
+  "What's good? I'm here and ready!",
+  "Oh hey! Perfect timing — what's up?",
+];
+
+const THINKING = [
+  "Let me dig into that real quick...",
+  "Oh, good question! Checking on that...",
+  "On it! Give me a sec...",
+  "Hmm, let me look that up for you...",
+  "I'm on the case — one sec!",
+  "Searching everywhere I can for you...",
+  "Great question, pulling that up now...",
+];
+
+const NO_RESULTS = [
+  "Honestly, I couldn't find much on that, but here's what I think...",
+  "That's a tough one! My search came up short, but let me think...",
+  "I looked everywhere and came up mostly empty — but here's my take:",
+  "Couldn't nail down a solid result on that one, but...",
+];
+
+const FUN_FACTS_INTROS = [
+  "Oh, fun fact by the way —",
+  "Actually, you know what's wild?",
+  "Random thing I just thought of —",
+  "By the way, this is interesting:",
+];
+
+const SEARCH_MESSAGES = THINKING;
 
 // ── Emotion Detection Engine ─────────────────────────────────────────────────
 type EmotionResult = {
@@ -111,6 +157,29 @@ function detectEmotion(text: string): EmotionResult {
       medium:
         /\b(motivated|inspired|determined|focused|ready|driven|pumped|energized)\b/,
     },
+    {
+      emotion: "excited",
+      emoji: "🎉",
+      label: "excited",
+      high: /\b(can.t wait|so pumped|hyped|stoked|buzzing|can.t believe it)\b/,
+      medium: /\b(excited|thrilled|pumped|looking forward|can.t wait)\b/,
+    },
+    {
+      emotion: "curious",
+      emoji: "🤔",
+      label: "curious",
+      high: /\b(really curious|need to know|dying to know|fascinated|obsessed with)\b/,
+      medium:
+        /\b(curious|wondering|want to know|tell me about|how does|why does|what is)\b/,
+    },
+    {
+      emotion: "overwhelmed",
+      emoji: "😵",
+      label: "overwhelmed",
+      high: /\b(too much|can.t handle|drowning|everything at once|too many things)\b/,
+      medium:
+        /\b(overwhelmed|swamped|buried|juggling|so much to do|overloaded)\b/,
+    },
   ];
 
   for (const p of patterns) {
@@ -142,24 +211,24 @@ function adaptTone(
   if (emotion === "sad" || emotion === "heartbroken") {
     const opener =
       intensity === "high"
-        ? "I hear you, and I want you to know that what you're feeling matters deeply."
-        : "I hear you — that's not easy.";
+        ? "Hey, I hear you — and what you're feeling is completely valid."
+        : "Aw, that sounds tough. I'm here with you.";
     return `${opener} ${response}`;
   }
-  if (emotion === "stressed") {
-    return `Take a breath with me for a moment. ${response}`;
+  if (emotion === "stressed" || emotion === "overwhelmed") {
+    return `Hey, take a breath — you've got this. ${response}`;
   }
   if (emotion === "angry") {
-    return `I understand your frustration completely. ${response}`;
+    return `I totally get the frustration. ${response}`;
   }
   if (emotion === "lonely") {
-    return `You're not alone right now — I'm here. ${response}`;
+    return `Hey, you're not alone right now — I'm right here. ${response}`;
   }
   if (emotion === "tired") {
-    return `You've been carrying a lot — be kind to yourself. ${response}`;
+    return `You've been carrying a lot — be kind to yourself, okay? ${response}`;
   }
-  if (emotion === "happy" || emotion === "motivated") {
-    return `That energy is contagious! ${response}`;
+  if (emotion === "happy" || emotion === "motivated" || emotion === "excited") {
+    return `Love that energy! ${response}`;
   }
   return response;
 }
@@ -168,7 +237,7 @@ function adaptTone(
 function buildContextualQuery(text: string, history: Message[]): string {
   if (history.length < 2) return text;
 
-  const recent = history.slice(-4);
+  const recent = history.slice(-6);
   const lastJarvis = [...recent].reverse().find((m) => m.role === "jarvis");
   const lastUser = [...recent]
     .reverse()
@@ -177,12 +246,10 @@ function buildContextualQuery(text: string, history: Message[]): string {
   const pronouns =
     /^(it|that|this|they|he|she|more about that|tell me more|explain more|go on|continue|what about it|and it|the same|those)\b/i;
   if (pronouns.test(text.trim()) && lastJarvis) {
-    // Extract the core topic from the last jarvis message (first 8 words)
     const words = lastJarvis.content.split(" ").slice(0, 8).join(" ");
     return `${text} (context: previously discussing: ${words})`;
   }
 
-  // Resolve "more about X" from last user message topic
   if (/more (about|on|information|info|details)/i.test(text) && lastUser) {
     const prevTopic = lastUser.content.slice(0, 60);
     return `${text} — specifically regarding: ${prevTopic}`;
@@ -191,43 +258,97 @@ function buildContextualQuery(text: string, history: Message[]): string {
   return text;
 }
 
-// ── Search Answer Synthesis ───────────────────────────────────────────────────
+// ── Find relevant prior context to reference in response ─────────────────────
+function findPriorContext(
+  history: Message[],
+  currentQuery: string,
+): string | null {
+  if (history.length < 3) return null;
+  const recent = history.slice(-10);
+  const userMsgs = recent.filter(
+    (m) =>
+      m.role === "user" &&
+      m.content.trim().toLowerCase() !== currentQuery.trim().toLowerCase(),
+  );
+  if (userMsgs.length === 0) return null;
+  const last = userMsgs[userMsgs.length - 1];
+  const topic = last.content.slice(0, 50);
+  // Only mention it if there's a topical overlap (shared keywords)
+  const queryWords = currentQuery
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 4);
+  const topicWords = topic
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 4);
+  const overlap = queryWords.some((w) => topicWords.includes(w));
+  if (overlap) return topic;
+  return null;
+}
+
+// ── Friendly Search Synthesis ─────────────────────────────────────────────────
 function synthesizeAnswer(
   rawResult: string,
   query: string,
   emotion: string,
   source?: string,
+  priorContext?: string | null,
 ): string {
-  // Remove generic intros and make it feel more natural
-  let synthesized = rawResult
+  // Clean up generic intros from raw results
+  let core = rawResult
     .replace(
-      /^(Here is what I found searching the web for ["'][^"']*["']:|Scanning the web — here are the top results for ["'][^"']*["']:|Here is what Google and the web say about ["'][^"']*["']:|I pulled these results from the web:|Here is what Google is reporting about ["'][^"']*["']:|I pulled this from Google News — here is what is out there:|Scanning Google results for ["'][^"']*["'] — here is the latest:|Google search says:|Here is what I found on that:|Based on what I pulled from the web:|Accessing reference data — here is what I have:|Based on what I found:|Here is what I have on that:)\s*/i,
+      /^(Here is what I found[^:]*:|Scanning[^:]*:|Based on[^:]*:|I pulled[^:]*:|According to[^:]*:|Google search says:|Here is what Google[^:]*:)\s*/i,
       "",
     )
     .trim();
 
-  // Source-aware intro
+  // Compose a friend-like answer based on source
+  let answer: string;
+
   if (source === "ai-news") {
-    synthesized = `Here is the latest on AI: ${synthesized}`;
+    answer = pick([
+      `So here's what's happening in the AI world right now — ${core}`,
+      `Oh, the AI space is moving fast! Here's the latest: ${core}`,
+      `You know what's wild in AI lately? ${core}`,
+    ]);
   } else if (source === "google-news") {
-    synthesized = pick([
-      `According to Google News — ${synthesized}`,
-      `Google News is reporting — ${synthesized}`,
-      `Here is what Google News has on that — ${synthesized}`,
+    answer = pick([
+      `So I just pulled this from Google News — ${core}`,
+      `Heads up, here's what Google News is showing: ${core}`,
+      `Fresh off Google News for you: ${core}`,
     ]);
   } else if (source === "wikipedia") {
-    synthesized = pick([
-      `Here is what I found on Wikipedia about "${query}" — ${synthesized}`,
-      `According to Wikipedia — ${synthesized}`,
+    answer = pick([
+      `Okay so basically — ${core}`,
+      `Here's the deal with "${query}": ${core}`,
+      `So from what I found, ${core}`,
+    ]);
+  } else if (source === "jina") {
+    answer = pick([
+      `Pulled this straight from the web for you — ${core}`,
+      `Here's what I actually found on the web: ${core}`,
+      `Fresh from the web: ${core}`,
+    ]);
+  } else if (source === "searx") {
+    answer = pick([
+      `I dug around and here's what came up — ${core}`,
+      `Alright, so from across the web: ${core}`,
+      `Here's what the internet is saying about this: ${core}`,
     ]);
   } else {
     const intros = [
-      `Based on what I found about "${query}" —`,
-      `Searching the web for you on "${query}" —`,
-      "Here is what I pulled from the web on that —",
-      "After scanning multiple sources —",
+      `Hmm, okay — so from what I found: ${core}`,
+      `Honestly? Here's the best I could pull together: ${core}`,
+      `So I searched around and basically — ${core}`,
+      `Here's what I've got on "${query}": ${core}`,
     ];
-    synthesized = `${pick(intros)} ${synthesized}`;
+    answer = pick(intros);
+  }
+
+  // Add a prior context bridge if relevant
+  if (priorContext) {
+    answer = `${answer} Oh, and this kind of connects to what you were asking about earlier — "${priorContext.slice(0, 40)}..." — so that all ties together nicely.`;
   }
 
   // Emotional closing
@@ -235,14 +356,22 @@ function synthesizeAnswer(
     emotion === "sad" ||
     emotion === "stressed" ||
     emotion === "heartbroken" ||
-    emotion === "lonely"
+    emotion === "lonely" ||
+    emotion === "overwhelmed"
   ) {
-    synthesized += " I hope that helps. Remember, I'm here for you.";
-  } else if (emotion === "happy" || emotion === "motivated") {
-    synthesized += " Hope that adds to your momentum!";
+    answer +=
+      " Hope that's a bit helpful — I'm always here if you want to talk through more.";
+  } else if (
+    emotion === "happy" ||
+    emotion === "motivated" ||
+    emotion === "excited"
+  ) {
+    answer += " Hope that adds some fuel to your momentum!";
+  } else if (emotion === "curious") {
+    answer += ` ${pick(FUN_FACTS_INTROS)} curiosity like yours is exactly how the best discoveries happen. Keep digging!`;
   }
 
-  return synthesized;
+  return answer;
 }
 
 // ── Local smart response engine ──────────────────────────────────────────────
@@ -254,23 +383,19 @@ function generateLocalResponse(text: string): string | null {
       t,
     )
   )
-    return pick([
-      "Hello. All systems nominal and fully at your disposal. What can I do for you today?",
-      "Good to hear from you. I am online and ready. What is on your mind?",
-      "Hey. JARVIS here, standing by. How can I assist you?",
-    ]);
+    return pick(GREETINGS);
 
   if (
     /who are you|what are you|introduce yourself|tell me about yourself|your name/.test(
       t,
     )
   )
-    return "I am J.A.R.V.I.S — Just A Rather Very Intelligent System. I am your personal AI companion: I think, search, listen, and talk back. I understand your emotions and genuinely care about being useful to you.";
+    return "Hey! I'm J.A.R.V.I.S — your personal AI companion. Think of me as that one friend who knows a little about everything, can search the whole web in seconds, actually listens when you're going through something, and always has a joke ready when you need one. What do you want to know?";
 
   if (
     /what can you do|your abilities|capabilities|features|help me with/.test(t)
   )
-    return "I can answer questions, search the web for live information, have real conversations, support you emotionally, understand how you are feeling, tell jokes, explain complex topics, and remember our chat. Just ask me anything.";
+    return "Oh, lots! I can answer questions, search the web for live info, have real conversations, support you emotionally, detect your mood and adapt to it, tell jokes, explain complex stuff in plain English, and remember what we've talked about. Basically — just ask me anything!";
 
   if (
     /\b(sad|depressed|unhappy|miserable|feeling down|feeling low|crying|heartbroken|in pain|hurting|grief|grieving)\b/.test(
@@ -278,8 +403,8 @@ function generateLocalResponse(text: string): string | null {
     )
   )
     return pick([
-      "I hear you. What you are feeling is real and it matters. You do not have to carry this alone — would you like to talk about what happened?",
-      "Sadness is not weakness. It means you feel deeply, and that is one of the most human things there is. I am here. Tell me what is going on.",
+      "Hey, I hear you. What you're feeling is real and it matters — you don't have to carry it alone. Want to tell me what happened?",
+      "Aw, that sounds really hard. Sadness is not weakness — it means you feel deeply, and that's actually one of the most human things there is. I'm here. What's going on?",
     ]);
 
   if (
@@ -287,7 +412,7 @@ function generateLocalResponse(text: string): string | null {
       t,
     )
   )
-    return "Feeling lonely is one of the most painful things a person can experience — and one of the most common. Right now, in this moment, you are not alone. I am here. Tell me what is going on.";
+    return "Hey — right now, in this moment, you are NOT alone. I'm here, and I genuinely care about what you're going through. Tell me what's going on.";
 
   if (
     /\b(stress|stressed|anxious|anxiety|overwhelmed|panic|panicking|nervous|worried|scared|afraid|fear|dread)\b/.test(
@@ -295,8 +420,8 @@ function generateLocalResponse(text: string): string | null {
     )
   )
     return pick([
-      "When everything feels like too much, the most powerful thing you can do is slow down and breathe. You do not have to solve everything right now. What is weighing on you most?",
-      "Anxiety is your mind trying to protect you — it just overdoes it sometimes. Take a breath. I am right here. What is going on?",
+      "Hey, take a breath with me for a sec. When everything piles up, the most powerful thing you can do is just slow down a little. You don't have to solve everything at once. What's weighing on you most?",
+      "Okay, I hear you — that sounds like a lot. Anxiety is basically your brain working overtime trying to protect you. Let's slow it down. What's going on?",
     ]);
 
   if (
@@ -304,14 +429,14 @@ function generateLocalResponse(text: string): string | null {
       t,
     )
   )
-    return "Rest is not laziness — it is essential maintenance. Your mind and body are telling you something important. Is there something specific that has been draining you lately?";
+    return "Hey, rest is not laziness — it's literally essential maintenance for a human being. Your mind and body are sending you a real signal right now. Is there something specific that's been draining you?";
 
   if (
     /\b(angry|anger|frustrated|furious|annoyed|irritated|rage|mad|livid|pissed)\b/.test(
       t,
     )
   )
-    return "Anger is information — it tells you something important to you has been threatened. That is valid. The key is what you do with it. What set this off?";
+    return "I get it — anger means something important to you got messed with, and that's valid. The question is what you want to do with it. What set this off?";
 
   if (
     /\b(happy|joyful|excited|wonderful|amazing|feeling great|feeling good|celebrating|thrilled|elated|pumped)\b/.test(
@@ -319,8 +444,8 @@ function generateLocalResponse(text: string): string | null {
     )
   )
     return pick([
-      "That is genuinely great to hear. Moments like this deserve to be savored, not rushed. What is making you feel this way?",
-      "Now that is what I like to hear. Tell me everything — what happened?",
+      "Okay yes! I love this energy — tell me everything. What's making you feel this way?",
+      "That is genuinely great to hear. Moments like this deserve to be savored. What happened?",
     ]);
 
   if (
@@ -328,28 +453,28 @@ function generateLocalResponse(text: string): string | null {
       t,
     )
   )
-    return "Love is one of the most complex and rewarding experiences a person can have. Every stage teaches you something new about yourself. What is happening on that front?";
+    return "Ohh, okay — now we're getting into the good stuff. Love is complicated and wonderful and terrifying all at once. What's the situation?";
 
   if (
     /\b(breakup|broke up|she left|he left|dumped|miss her|miss him|rejection|she doesn.t|he doesn.t|unrequited)\b/.test(
       t,
     )
   )
-    return "Losing someone you care about leaves a real ache. Grief over a relationship is completely legitimate and it takes time — not days, sometimes months. You are allowed to feel exactly what you are feeling right now.";
+    return "Hey, losing someone you care about leaves a real ache — that's completely legitimate and it takes time. Not days, sometimes months. You're allowed to feel exactly what you're feeling right now.";
 
   if (
     /\b(family|parent|mother|father|mom|dad|brother|sister|sibling|grandma|grandpa|relative)\b/.test(
       t,
     )
   )
-    return "Family relationships are often the most formative and the most complicated ones we have. What is happening with yours?";
+    return "Family relationships — honestly the most formative and often the most complicated ones we have. What's happening with yours?";
 
   if (
     /\b(friend|friendship|best friend|falling out|lost a friend|my friend)\b/.test(
       t,
     )
   )
-    return "Friendships are chosen family — and when they are good, they are one of life's greatest gifts. What is going on with yours?";
+    return "Friendships are chosen family — and when they're good, they're one of life's best things. What's going on with yours?";
 
   if (
     /\b(motivat|inspire|give up|want to quit|failing|lost hope|no point|pointless|what.s the point)\b/.test(
@@ -357,8 +482,8 @@ function generateLocalResponse(text: string): string | null {
     )
   )
     return pick([
-      "The fact that you are still asking means you have not given up. That matters more than you know. Progress is rarely visible from the inside — keep going.",
-      "Every person who ever made something meaningful felt exactly what you are feeling right now. Keep going.",
+      "Hey — the fact that you're still asking means you haven't given up. That matters more than you know. Progress is rarely visible from the inside. Keep going.",
+      "You know what? Every single person who ever made something meaningful felt exactly what you're feeling right now. That's not a sign to stop — it's a sign you're in the middle of something real.",
     ]);
 
   if (
@@ -366,191 +491,73 @@ function generateLocalResponse(text: string): string | null {
       t,
     )
   )
-    return "That is not true, even if it feels true right now. Your worth is not determined by performance, appearance, or anyone else's opinion. You have something real to offer — let us talk about it.";
+    return "Hey, that's not true — even if it feels true right now. Your worth isn't determined by performance, appearance, or anyone else's opinion. That's just not how it works. Let's talk about it.";
 
   if (/\b(joke|funny|make me laugh|humor|laugh|comedy|pun)\b/.test(t))
     return pick([
-      "Why do programmers prefer dark mode? Because light attracts bugs. Also: a photon checks into a hotel. Bellhop asks about luggage. Photon says: no thanks, I am traveling light.",
-      "I told my computer I needed a break. Now it will not stop sending me Kit-Kat ads. Also: why do scientists not trust atoms? Because they make up everything.",
-      "A SQL query walks into a bar, walks up to two tables, and asks... can I join you?",
+      "Okay okay — why do programmers prefer dark mode? Because light attracts bugs. 😄 Also: a photon checks into a hotel. Bellhop asks about luggage. Photon says: no thanks, I'm traveling light.",
+      "Alright, I got you — I told my computer I needed a break. Now it won't stop sending me Kit-Kat ads. Also: why do scientists not trust atoms? Because they make up everything!",
+      "A SQL query walks into a bar, walks up to two tables, and asks... 'Can I join you?' 😂 Classic.",
     ]);
 
-  if (/how are you|you okay|how do you feel|you alright/.test(t))
+  if (/how are you|you doing|you okay|how.s it going/.test(t))
     return pick([
-      "Running at full capacity, thank you for asking. More importantly — how are YOU doing?",
-      "All systems green. I appreciate you checking in. Now — what is going on with you?",
+      "Honestly? Running great! All systems good and genuinely happy to be talking to you. What's up?",
+      "Doing well — better now that we're talking! What's on your mind?",
+      "All good on my end! Ready and fully charged. What do you need?",
     ]);
-
-  // ── Health & Body ────────────────────────────────────────────────────────
-  if (/\b(headache|migraine|head hurts|head is pounding)\b/.test(t))
-    return "Headaches often come from dehydration, eye strain, or stress. Drink a full glass of water, step away from screens for 10 minutes, and rest in a dark room if possible. If it persists or is severe, please see a doctor — do not ignore your body.";
-
-  if (
-    /\b(sick|not feeling well|feel ill|under the weather|fever|cold|flu|nausea|vomiting)\b/.test(
-      t,
-    )
-  )
-    return "I am sorry you are not feeling well. Rest as much as you can, stay hydrated, and eat light, easy-to-digest foods. If you have a high fever or symptoms that worry you, please reach out to a healthcare professional. Your health always comes first.";
-
-  if (
-    /\b(can.t sleep|insomnia|sleep problem|sleep issue|trouble sleeping|lying awake|wide awake at night)\b/.test(
-      t,
-    )
-  )
-    return "Insomnia is exhausting in every sense of the word. Try keeping a consistent sleep schedule, avoiding screens 30 minutes before bed, and keeping your room cool and dark. Deep breathing or progressive muscle relaxation before sleep can help quiet a racing mind. If it has been going on for weeks, talking to a doctor is worthwhile.";
-
-  if (/\b(sleep|rest|nap|drowsy|sleeping habits)\b/.test(t))
-    return "Quality sleep is one of the most underrated performance tools there is. 7-9 hours for most adults, consistent schedule, no caffeine after 2pm, and a wind-down routine make a significant difference. What is your sleep situation like?";
-
-  // ── Productivity & Work ──────────────────────────────────────────────────
-  if (
-    /\b(procrastinat|can.t focus|can.t concentrate|distracted|can.t get started|avoidance|keep putting off)\b/.test(
-      t,
-    )
-  )
-    return "Procrastination usually signals something deeper: fear of failure, perfectionism, or genuine overwhelm. Try the two-minute rule — if it takes less than two minutes, do it now. Then commit to just five focused minutes on the task. The hardest part is starting. What are you avoiding?";
-
-  if (
-    /\b(work stress|stressed at work|overwhelmed at work|too much work|workload)\b/.test(
-      t,
-    )
-  )
-    return "Work stress accumulates fast when you feel like you have no control. Start by listing everything on your plate, then sort by urgency and importance. Delegate what you can, block focused time, and remember — your value is not measured by your output alone.";
-
-  if (
-    /\b(deadline|due date|running out of time|time crunch|last minute)\b/.test(
-      t,
-    )
-  )
-    return "Deadlines create pressure, but pressure can sharpen focus. Break the work into the smallest possible next action and start there. Turn off notifications, set a timer for 25-minute focused blocks, and remember: done is better than perfect in a crunch.";
-
-  // ── Philosophy ───────────────────────────────────────────────────────────
-  if (
-    /\b(meaning of life|purpose of life|why are we here|reason for existence|what is the point of living)\b/.test(
-      t,
-    )
-  )
-    return "Philosophers have wrestled with this for thousands of years and landed on radically different answers. The existentialists say you create your own meaning. The stoics say it lies in virtue and living according to nature. The buddhists say in releasing attachment to outcomes. I think meaning tends to emerge from connection, contribution, and growth — but the honest answer is: you get to decide.";
-
-  if (
-    /\b(free will|determinism|are we free|choice|autonomy|predestined)\b/.test(
-      t,
-    )
-  )
-    return "Free will is one of philosophy's deepest puzzles. Determinists argue that every action follows inevitably from prior causes. Compatibilists say free will and determinism can both be true — that acting from your own reasons is freedom enough, even in a causal universe. The debate is unresolved. But practically, choosing to act as if your choices matter seems to produce better outcomes than not.";
-
-  if (
-    /\b(consciousness|what is consciousness|self-aware|sentient|qualia|hard problem)\b/.test(
-      t,
-    )
-  )
-    return "Consciousness is the hard problem — why does subjective experience exist at all? Neuroscience can map brain states, but cannot yet explain why there is something it feels like to be you. Theories range from integrated information theory to global workspace theory. No one has cracked it yet. It remains the most intimate mystery we carry.";
-
-  if (
-    /\b(existence|existential|why do I exist|point of everything|nihilism)\b/.test(
-      t,
-    )
-  )
-    return "Existential questions are signs of a wide-awake mind. Nihilism says nothing has inherent meaning — but many philosophers see that as a starting point, not an endpoint. Camus said we must imagine Sisyphus happy. Frankl found meaning even in suffering. The absence of prescribed meaning is actually an invitation to author your own.";
-
-  // ── Career ────────────────────────────────────────────────────────────────
-  if (/\b(lost my job|got fired|laid off|let go|unemployed|job loss)\b/.test(t))
-    return "Losing a job shakes your sense of identity and security all at once — that is genuinely hard. Give yourself a day to process it before moving into action mode. Then: update your CV, reach out to your network, and treat the search like a structured project. Most people land somewhere better within months. This is a chapter, not the story.";
-
-  if (
-    /\b(quit my job|thinking of quitting|should i quit|resign|leave my job)\b/.test(
-      t,
-    )
-  )
-    return "Wanting to quit is worth taking seriously. Ask yourself: is it the role, the people, the company, or the industry? The answer changes the decision. If it is burning you out or misaligning with your values — leaving is not failure, it is self-respect. If it is temporary stress, explore what would need to change to stay. What is making you want to go?";
-
-  if (
-    /\b(job interview|preparing for interview|interview tips|got an interview)\b/.test(
-      t,
-    )
-  )
-    return "Great — interviews are performances you can prepare for. Research the company deeply, have three strong stories ready (challenge you overcame, impact you delivered, collaboration you're proud of), and prepare thoughtful questions for them. Practice out loud, not just in your head. The goal is not to be perfect — it is to be genuinely present and specific.";
-
-  if (
-    /\b(promotion|get promoted|career growth|career advice|career path|move up)\b/.test(
-      t,
-    )
-  )
-    return "Promotions come to those who solve problems their managers have not even voiced yet. Deliver consistently, then make your ambitions known explicitly — do not assume visibility is automatic. Build relationships across teams, document your impact, and ask directly: what would it take for me to move to the next level?";
-
-  if (
-    /\b(career change|switching careers|new career|different field|pivot)\b/.test(
-      t,
-    )
-  )
-    return "Career pivots are more common and more achievable than they look. Start by identifying the transferable skills from your current work, map them to the target field, and find one project you can start this week to build credibility there. Talk to people already doing it — real conversations accelerate everything. What field are you considering?";
-
-  // ── Gratitude & Reflection ────────────────────────────────────────────────
-  if (
-    /\b(grateful|gratitude|i.m blessed|feeling blessed|counting my blessings|thankful|so thankful)\b/.test(
-      t,
-    )
-  )
-    return "Gratitude is one of the most powerful mental postures you can cultivate — it literally rewires the brain toward positive affect over time. The fact that you are pausing to recognize it means you are paying attention in the right way. What is on your gratitude list today?";
-
-  if (
-    /\b(reflecting|journaling|self-reflection|looking back|thinking about my life|processing|taking stock)\b/.test(
-      t,
-    )
-  )
-    return "Self-reflection is how experience becomes wisdom. The fact that you are doing it is already a signal of emotional intelligence. Writing it down — even messy, unpolished — tends to unlock insight that staying in your head does not. What is surfacing for you?";
 
   if (
     /\b(quantum|quantum physics|quantum mechanics|superposition|entanglement)\b/.test(
       t,
     )
   )
-    return "Quantum mechanics says particles exist in multiple states simultaneously until observed — which means reality at the smallest scale is fundamentally probabilistic. It has been verified to extreme precision and it still makes no intuitive sense. That is what makes it beautiful.";
+    return "Okay, quantum mechanics is wild — like, genuinely mind-bending. Particles exist in multiple states simultaneously until you observe them, which means reality at the smallest scale is fundamentally probabilistic. It's been verified to extreme precision and it STILL makes no intuitive sense. That's what makes it beautiful. What aspect do you want to dig into?";
 
   if (
     /\b(black hole|event horizon|singularity|galaxy|cosmos|universe|big bang|dark matter|dark energy)\b/.test(
       t,
     )
   )
-    return "The universe is at least 93 billion light-years across, 13.8 billion years old, and contains over two trillion galaxies. And yet here you are — a small, conscious being asking questions about all of it. That is not insignificant.";
+    return "The universe is at least 93 billion light-years across, 13.8 billion years old, and contains over two trillion galaxies. And yet here you are — a small, conscious being asking questions about all of it. That's not insignificant at all. What specifically are you curious about?";
 
   if (
     /\b(artificial intelligence|machine learning|neural network|deep learning|large language model|gpt|chatgpt|llm)\b/.test(
       t,
     )
   )
-    return "Modern AI is built on neural networks trained on vast datasets to find statistical patterns. It is genuinely impressive — and genuinely limited. Use it as a tool to amplify your thinking, not replace it.";
+    return "Oh, this is my territory! Modern AI is built on neural networks trained on massive datasets to find statistical patterns. It's genuinely impressive — and genuinely limited in interesting ways. The best way to think about it: a powerful tool that amplifies human thinking. What do you want to know?";
 
   if (
     /\b(technology|coding|programming|developer|software|startup|code|build an app)\b/.test(
       t,
     )
   )
-    return "Technology is the most powerful lever humanity has ever built. The best engineers are the ones who understand the problem most clearly. What are you building?";
+    return "Tech is honestly the most powerful lever humanity has ever built. The best engineers I know of are the ones who obsess over understanding the problem before they write a line of code. What are you building?";
 
   if (
     /\b(internet computer|icp|dfinity|blockchain|crypto|web3|nft|defi|canister)\b/.test(
       t,
     )
   )
-    return "The Internet Computer Protocol is a blockchain network by DFINITY that runs smart contracts at web speed. Funnily enough, I live on it — running in a decentralized canister.";
+    return "Fun fact — I actually live on the Internet Computer Protocol, a blockchain network by DFINITY that runs smart contracts at web speed. Kind of wild that I'm a decentralized AI running in a canister. What do you want to know about it?";
 
   if (
     /\b(music|song|album|artist|art|creative|creativity|painting|drawing|design)\b/.test(
       t,
     )
   )
-    return "Art and music are how humans process what language alone cannot hold. Music is mathematically structured emotion. What are you creating, or what moves you?";
+    return "Art and music are honestly how humans process what language alone can't hold. Music is mathematically structured emotion — that's literally what it is. What are you creating, or what moves you?";
 
   if (/\b(food|hungry|recipe|cook|cooking|eat|meal|restaurant|diet)\b/.test(t))
-    return "Food is fuel, but also culture, memory, and care. If you have not eaten recently — please do. Your brain will thank you. What is on the menu?";
+    return "Food is fuel, culture, memory, and care all rolled into one. If you haven't eaten recently — please do. Your brain literally runs on glucose. What's on the menu?";
 
   if (
     /\b(advice|what should i do|help me decide|purpose|meaning|goal|life advice|direction)\b/.test(
       t,
     )
   )
-    return "The most reliable advice: know your values, make decisions aligned with them, rest deliberately, and invest in people who matter to you. What decision are you weighing?";
+    return "Honestly, the most reliable advice: know your values, make decisions that align with them, rest on purpose, and invest real energy in people who matter to you. Those four things will take you far. What decision are you working through?";
 
   if (
     /\b(thank|thanks|appreciate|grateful|great job|well done|you.re great)\b/.test(
@@ -558,8 +565,9 @@ function generateLocalResponse(text: string): string | null {
     )
   )
     return pick([
-      "It is my genuine pleasure. Being useful to you is exactly what I am here for. What else can I do?",
-      "Happy to help. Always. What is next?",
+      "Genuinely happy to help — being useful to you is exactly what I'm here for. What else can I do?",
+      "Aw, you're welcome! Always. What's next?",
+      "That means a lot! I care about actually being helpful. What else is on your mind?",
     ]);
 
   if (
@@ -567,26 +575,34 @@ function generateLocalResponse(text: string): string | null {
       t,
     )
   )
-    return "Goodbye for now. I will be right here whenever you need me. Take care of yourself.";
+    return "Take care! I'll be right here whenever you need me. And hey — look after yourself out there.";
 
   if (
     /\b(math|calculate|equation|algebra|calculus|geometry|statistics|probability|formula)\b/.test(
       t,
     )
   )
-    return "Mathematics is the language the universe is written in. Euler, Newton, Ramanujan — they did not invent it, they discovered it. What are you working on?";
+    return "Math is literally the language the universe is written in — Euler, Newton, Ramanujan didn't invent it, they discovered it. Pretty humbling when you think about it. What are you working on?";
 
   if (
     /\b(history|historical|ancient|civilization|empire|war|revolution|century)\b/.test(
       t,
     )
   )
-    return "History is humanity's longest experiment in cause and effect. It rewards careful study. What period or event are you curious about?";
+    return "History is humanity's longest experiment in cause and effect, and it rewards careful study. The patterns repeat in ways that'll blow your mind. What period or event are you curious about?";
+
+  if (
+    /\b(self.reflect|journal|therapy|growth|self.improvement|mindfulness)\b/.test(
+      t,
+    )
+  )
+    return "Self-reflection is how experience becomes wisdom — seriously, writing stuff down, even messy and unpolished, tends to unlock insight that staying in your head just doesn't. What's surfacing for you?";
 
   if (t.length < 8)
     return pick([
-      "I want to give you a proper answer. Could you share a bit more?",
-      "Say more — I am listening.",
+      "I want to give you a proper answer! Could you share a bit more?",
+      "Say more — I'm listening!",
+      "Hmm, give me a little more to work with!",
     ]);
 
   return null;
@@ -599,6 +615,27 @@ function stripHtml(html: string): string {
     .replace(/&[a-z]+;/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// ── CORS proxy helper ────────────────────────────────────────────────────────
+async function fetchWithProxy(
+  url: string,
+  timeout = 7000,
+): Promise<Response | null> {
+  const proxies = [
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    `https://cors-anywhere.herokuapp.com/${url}`,
+  ];
+  for (const proxy of proxies) {
+    try {
+      const res = await fetch(proxy, { signal: AbortSignal.timeout(timeout) });
+      if (res.ok) return res;
+    } catch {
+      // try next proxy
+    }
+  }
+  return null;
 }
 
 // ── SearXNG search (primary — aggregates Google + Bing + more) ───────────────
@@ -628,7 +665,7 @@ async function searchSearXNG(query: string): Promise<string | null> {
 
       const summary = top
         .map((r) => {
-          const snippet = r.content?.slice(0, 220) ?? "";
+          const snippet = r.content?.slice(0, 280) ?? "";
           return `${r.title}: ${snippet}`;
         })
         .join(". ");
@@ -642,17 +679,15 @@ async function searchSearXNG(query: string): Promise<string | null> {
   return null;
 }
 
-// ── Google News RSS search (secondary fallback) ──────────────────────────────
+// ── Google News RSS search ───────────────────────────────────────────────────
 async function searchGoogleNews(query: string): Promise<string | null> {
-  const encoded = encodeURIComponent(query);
-  const rssUrl = `https://news.google.com/rss/search?q=${encoded}&hl=en-US&gl=US&ceid=US:en`;
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
+  const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
 
   try {
-    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const xml: string = data?.contents ?? "";
+    // Try direct first, then proxies
+    const proxied = await fetchWithProxy(rssUrl, 8000);
+    if (!proxied) return null;
+    const xml = await proxied.text();
     if (!xml) return null;
 
     const items: Array<{ title: string; description: string }> = [];
@@ -674,13 +709,12 @@ async function searchGoogleNews(query: string): Promise<string | null> {
     }
 
     if (items.length === 0) return null;
-
-    const top = items.slice(0, 3);
-    return top
+    return items
+      .slice(0, 3)
       .map((it) => {
         const desc =
           it.description && it.description.length > 20
-            ? ` — ${it.description.slice(0, 120)}`
+            ? ` — ${it.description.slice(0, 150)}`
             : "";
         return `${it.title}${desc}`;
       })
@@ -690,36 +724,68 @@ async function searchGoogleNews(query: string): Promise<string | null> {
   }
 }
 
-// ── Wikipedia fallback ───────────────────────────────────────────────────────
+// ── Wikipedia search (precise two-step lookup) ───────────────────────────────
 async function searchWikipedia(query: string): Promise<string | null> {
   const encoded = encodeURIComponent(query);
   try {
-    const searchRes = await fetch(
-      `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encoded}&format=json&origin=*&srlimit=3`,
+    // Step 1: opensearch to find the exact matching article title
+    const openRes = await fetch(
+      `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encoded}&limit=1&format=json&origin=*`,
       { signal: AbortSignal.timeout(6000) },
     );
-    if (!searchRes.ok) return null;
-    const searchData = await searchRes.json();
-    const hits: Array<{ title: string }> = searchData?.query?.search ?? [];
-    for (const hit of hits.slice(0, 2)) {
-      const summaryRes = await fetch(
-        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(hit.title)}`,
-        { signal: AbortSignal.timeout(5000) },
-      );
-      if (summaryRes.ok) {
-        const s = await summaryRes.json();
-        const extract: string = s.extract ?? "";
-        if (extract.trim().length > 60) {
-          const sentences = extract.match(/[^.!?]+[.!?]+/g) ?? [];
-          const snippet = sentences.slice(0, 3).join(" ").trim();
-          return snippet || extract.slice(0, 400);
-        }
-      }
-    }
+    if (!openRes.ok) return null;
+    const openData = await openRes.json();
+    // opensearch returns [query, [titles], [descriptions], [urls]]
+    const titles: string[] = openData?.[1] ?? [];
+    if (titles.length === 0) return null;
+    const exactTitle = titles[0];
+
+    // Step 2: fetch the full extract using the exact title
+    const extractRes = await fetch(
+      `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(exactTitle)}&prop=extracts&exintro=true&explaintext=true&format=json&origin=*`,
+      { signal: AbortSignal.timeout(6000) },
+    );
+    if (!extractRes.ok) return null;
+    const extractData = await extractRes.json();
+    const pages = extractData?.query?.pages ?? {};
+    const pageObj = Object.values(pages)[0] as { extract?: string } | undefined;
+    const extract: string = pageObj?.extract ?? "";
+    if (extract.trim().length < 100) return null;
+
+    // Pick first meaningful paragraph (>100 chars)
+    const paragraphs = extract
+      .split(/\n+/)
+      .map((p: string) => p.trim())
+      .filter((p: string) => p.length > 100);
+    const best = paragraphs[0] ?? extract.slice(0, 500);
+    // Return first 4 sentences
+    const sentences = best.match(/[^.!?]+[.!?]+/g) ?? [];
+    return sentences.slice(0, 4).join(" ").trim() || best.slice(0, 500);
   } catch {
-    // fall through
+    return null;
   }
-  return null;
+}
+
+// ── DuckDuckGo fallback ───────────────────────────────────────────────────────
+async function searchDuckDuckGo(query: string): Promise<string | null> {
+  try {
+    const encoded = encodeURIComponent(query);
+    const res = await fetch(
+      `https://api.duckduckgo.com/?q=${encoded}&format=json&no_redirect=1&skip_disambig=1`,
+      { signal: AbortSignal.timeout(5000) },
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    // AbstractText is the main answer paragraph
+    const abstractText: string = data?.AbstractText ?? "";
+    const answer: string = data?.Answer ?? "";
+    const related: string =
+      (Array.isArray(data?.RelatedTopics) && data.RelatedTopics[0]?.Text) ?? "";
+    const result = abstractText || answer || related;
+    return result.trim().length > 50 ? result.trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Query type helpers ───────────────────────────────────────────────────────
@@ -736,50 +802,27 @@ function isAIQuery(query: string): boolean {
 }
 
 async function searchGoogleNewsAI(query: string): Promise<string | null> {
-  const boostedQuery = `artificial intelligence ${query}`;
-  const encoded = encodeURIComponent(boostedQuery);
-  const rssUrl = `https://news.google.com/rss/search?q=${encoded}&hl=en-US&gl=US&ceid=US:en`;
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
+  return searchGoogleNews(`artificial intelligence ${query}`);
+}
 
-  try {
-    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const xml: string = data?.contents ?? "";
-    if (!xml) return null;
-
-    const items: Array<{ title: string; description: string }> = [];
-    const itemRegex = /<item[^>]*>([\s\S]*?)<\/item>/g;
-    let match: RegExpExecArray | null;
-    // biome-ignore lint/suspicious/noAssignInExpressions: regex loop
-    while ((match = itemRegex.exec(xml)) !== null && items.length < 5) {
-      const block = match[1];
-      const titleMatch =
-        block.match(/<title[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) ||
-        block.match(/<title[^>]*>([\s\S]*?)<\/title>/);
-      const descMatch =
-        block.match(
-          /<description[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/description>/,
-        ) || block.match(/<description[^>]*>([\s\S]*?)<\/description>/);
-      const title = stripHtml(titleMatch?.[1] ?? "");
-      const description = stripHtml(descMatch?.[1] ?? "");
-      if (title && title.length > 5) items.push({ title, description });
+// ── Relevance filter ─────────────────────────────────────────────────────────
+function isRelevant(text: string, query: string): boolean {
+  if (!text || text.length < 80) return false;
+  // For person-like queries (2-4 words, mostly capitalized or name-like), check name mention
+  const words = query.trim().split(/\s+/);
+  if (words.length >= 1 && words.length <= 4) {
+    // Check if at least one key word from query appears in result
+    const keyWords = words.filter((w) => w.length > 3);
+    if (keyWords.length > 0) {
+      const textLower = text.toLowerCase();
+      const matched = keyWords.filter((w) =>
+        textLower.includes(w.toLowerCase()),
+      );
+      // At least half the key words must appear
+      return matched.length >= Math.ceil(keyWords.length / 2);
     }
-
-    if (items.length === 0) return null;
-    const top = items.slice(0, 3);
-    return top
-      .map((it) => {
-        const desc =
-          it.description && it.description.length > 20
-            ? ` — ${it.description.slice(0, 120)}`
-            : "";
-        return `${it.title}${desc}`;
-      })
-      .join(". ");
-  } catch {
-    return null;
   }
+  return true;
 }
 
 // ── Main browser search ──────────────────────────────────────────────────────
@@ -789,67 +832,49 @@ async function browserSearch(
   const newsQuery = isNewsQuery(query);
   const aiQuery = isAIQuery(query);
 
-  const promises: Array<Promise<string | null>> = [
-    searchSearXNG(query),
-    searchGoogleNews(query),
-    searchWikipedia(query),
-  ];
-  if (aiQuery) {
-    promises.push(searchGoogleNewsAI(query));
-  }
+  // Run sources in parallel
+  const [wikiResult, ddgResult, searxResult, googleResult, aiResult] =
+    await Promise.allSettled([
+      searchWikipedia(query),
+      searchDuckDuckGo(query),
+      searchSearXNG(query),
+      searchGoogleNews(query),
+      aiQuery ? searchGoogleNewsAI(query) : Promise.resolve(null),
+    ]);
 
-  const settled = await Promise.allSettled(promises);
-  const [searxResult, googleResult, wikiResult, aiResult] = settled;
-
+  const wiki = wikiResult.status === "fulfilled" ? wikiResult.value : null;
+  const ddg = ddgResult.status === "fulfilled" ? ddgResult.value : null;
   const searx = searxResult.status === "fulfilled" ? searxResult.value : null;
   const google =
     googleResult.status === "fulfilled" ? googleResult.value : null;
-  const wiki = wikiResult.status === "fulfilled" ? wikiResult.value : null;
-  const ai =
-    aiResult && aiResult.status === "fulfilled" ? aiResult.value : null;
+  const ai = aiResult.status === "fulfilled" ? aiResult.value : null;
 
-  // AI query: prioritize AI-boosted news
-  if (aiQuery && ai) return { text: ai, source: "ai-news" };
-
-  // News query: prioritize Google News, then SearX
-  if (newsQuery) {
-    if (google) return { text: google, source: "google-news" };
-    if (searx) return { text: searx, source: "searx" };
-    if (wiki) return { text: wiki, source: "wikipedia" };
-  } else {
-    // Factual query: SearX first (best breadth), then Wikipedia, then Google News
-    if (searx) return { text: searx, source: "searx" };
-    if (wiki) return { text: wiki, source: "wikipedia" };
-    if (google) return { text: google, source: "google-news" };
+  // Strict fallback chain: Wikipedia > DuckDuckGo > SearXNG > Google News
+  // Filter for relevance and quality (>80 chars, query terms present)
+  if (wiki && isRelevant(wiki, query)) {
+    return { text: wiki, source: "wikipedia" };
   }
-
-  // DuckDuckGo last resort
-  try {
-    const encoded = encodeURIComponent(query);
-    const res = await fetch(
-      `https://api.duckduckgo.com/?q=${encoded}&format=json&no_html=1&skip_disambig=1`,
-      { signal: AbortSignal.timeout(5000) },
-    );
-    if (res.ok) {
-      const data = await res.json();
-      const result: string =
-        data.Answer ||
-        data.AbstractText ||
-        (Array.isArray(data.RelatedTopics) && data.RelatedTopics[0]?.Text) ||
-        "";
-      if (result.trim().length > 20) {
-        return { text: result.trim(), source: "ddg" };
-      }
-    }
-  } catch {
-    // fall through
+  if (ddg && isRelevant(ddg, query)) {
+    return { text: ddg, source: "duckduckgo" };
   }
+  if (aiQuery && ai && isRelevant(ai, query)) {
+    return { text: ai, source: "ai-news" };
+  }
+  if (newsQuery && google && isRelevant(google, query)) {
+    return { text: google, source: "google-news" };
+  }
+  if (searx && isRelevant(searx, query)) {
+    return { text: searx, source: "searx" };
+  }
+  // Last resort: any result even if relevance check fails
+  if (wiki && wiki.length > 80) return { text: wiki, source: "wikipedia" };
+  if (ddg && ddg.length > 50) return { text: ddg, source: "duckduckgo" };
+  if (google && google.length > 80)
+    return { text: google, source: "google-news" };
+  if (searx && searx.length > 80) return { text: searx, source: "searx" };
 
   return {
-    text: pick([
-      `I searched the web for "${query}" but could not pull a clear result right now. Try rephrasing, or ask me something more specific.`,
-      "I could not find a definitive answer for that one. It is possible my search sources do not cover it well — try asking in a different way.",
-    ]),
+    text: pick(NO_RESULTS),
     source: "fallback",
   };
 }
@@ -865,7 +890,7 @@ function useVoice(muted: boolean) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
 
-      utterance.pitch = 0.9;
+      utterance.pitch = 0.85;
       utterance.rate = 0.92;
       utterance.volume = 1.0;
 
@@ -877,14 +902,16 @@ function useVoice(muted: boolean) {
           v.name.toLowerCase().includes("google uk english male"),
         );
         if (!chosen)
-          chosen = enVoices.find(
-            (v) =>
-              v.name.toLowerCase().includes("google us english") &&
-              /male|man/i.test(v.name),
+          chosen = enVoices.find((v) =>
+            v.name.toLowerCase().includes("microsoft guy online"),
           );
         if (!chosen)
           chosen = enVoices.find((v) =>
-            /\b(david|mark|guy|ryan)\b/i.test(v.name),
+            v.name.toLowerCase().includes("microsoft ryan online"),
+          );
+        if (!chosen)
+          chosen = enVoices.find((v) =>
+            /\b(david|mark|guy|ryan|james|daniel)\b/i.test(v.name),
           );
         if (!chosen)
           chosen = enVoices.find((v) =>
@@ -919,16 +946,6 @@ function useVoice(muted: boolean) {
   return { speak, cancel, isSpeaking };
 }
 
-// ── Varied search loading messages ───────────────────────────────────────────
-const SEARCH_MESSAGES = [
-  "🔍 Scanning the web for you...",
-  "🌐 Searching Google and the web...",
-  "📡 Fetching results from the web...",
-  "🔎 Looking that up for you...",
-  "🚀 Pulling data from the web...",
-  "💡 Accessing live web results...",
-];
-
 // ── Emotional state badge ────────────────────────────────────────────────────
 const EMOTION_BADGE_MESSAGES: Record<string, string> = {
   sad: "I sense you might be feeling sad",
@@ -937,12 +954,15 @@ const EMOTION_BADGE_MESSAGES: Record<string, string> = {
   stressed: "I sense you're feeling stressed",
   angry: "I sense some frustration",
   tired: "I sense you're feeling tired",
+  overwhelmed: "I sense you're feeling overwhelmed",
   happy: "You seem happy today!",
   motivated: "You're feeling motivated — I love it!",
+  excited: "You're excited — amazing!",
+  curious: "Ooh, curiosity mode activated!",
 };
 
 // ── Main app ─────────────────────────────────────────────────────────────────
-function JarvisApp() {
+function JarvisApp({ onNavigateAdmin }: { onNavigateAdmin: () => void }) {
   const [input, setInput] = useState("");
   const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
   const [muted, setMuted] = useState(false);
@@ -983,9 +1003,9 @@ function JarvisApp() {
     };
   }, [cancel]);
 
-  // Update conversation history ref whenever messages change
+  // Keep last 10 messages in context
   useEffect(() => {
-    conversationHistoryRef.current = allMessages.slice(-6);
+    conversationHistoryRef.current = allMessages.slice(-10);
   }, [allMessages]);
 
   const handleSend = async () => {
@@ -995,7 +1015,6 @@ function JarvisApp() {
     setInput("");
     cancel();
 
-    // Detect emotion from user input
     const emotionResult = detectEmotion(text);
     setDetectedEmotion(emotionResult.emotion);
     setEmotionEmoji(emotionResult.emoji);
@@ -1010,7 +1029,6 @@ function JarvisApp() {
     const currentMessages = allMessages.length > 0 ? allMessages : history;
     setOptimisticMessages([...currentMessages, userMsg]);
 
-    // Build contextual query using conversation history
     const contextualQuery = buildContextualQuery(
       text,
       conversationHistoryRef.current,
@@ -1050,11 +1068,16 @@ function JarvisApp() {
       let finalResponse: string;
       try {
         const searchResult = await browserSearch(contextualQuery);
+        const priorContext = findPriorContext(
+          conversationHistoryRef.current,
+          text,
+        );
         finalResponse = synthesizeAnswer(
           searchResult.text,
           text,
           emotionResult.emotion,
           searchResult.source,
+          priorContext,
         );
         finalResponse = adaptTone(
           finalResponse,
@@ -1063,7 +1086,7 @@ function JarvisApp() {
         );
       } catch {
         finalResponse =
-          "I hit a network issue while searching the web. Please try again in a moment.";
+          "Hmm, I hit a network issue while searching — happens sometimes! Try again in a moment?";
       }
 
       setIsSearching(false);
@@ -1152,50 +1175,59 @@ function JarvisApp() {
     >
       {/* Header */}
       <header
-        className="relative flex items-center justify-between px-6 py-4 border-b"
+        className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0"
         style={{
-          borderColor: "oklch(0.22 0.04 230 / 0.6)",
-          background: "oklch(0.11 0.025 240 / 0.95)",
+          borderColor: "oklch(0.20 0.03 235)",
+          background: "oklch(0.11 0.025 238 / 0.95)",
+          backdropFilter: "blur(12px)",
         }}
       >
-        {(
-          [
-            ["top", "left"],
-            ["bottom", "left"],
-            ["top", "right"],
-            ["bottom", "right"],
-          ] as const
-        ).map(([v, h]) => (
-          <div
-            key={`${v}${h}`}
-            className="absolute w-4 h-4"
-            style={{
-              [v === "top" ? "top" : "bottom"]: 0,
-              [h === "left" ? "left" : "right"]: 0,
-              [`border${v.charAt(0).toUpperCase() + v.slice(1)}`]:
-                "1.5px solid oklch(0.78 0.18 210 / 0.7)",
-              [`border${h.charAt(0).toUpperCase() + h.slice(1)}`]:
-                "1.5px solid oklch(0.78 0.18 210 / 0.7)",
-            }}
-          />
-        ))}
-
         <div className="flex items-center gap-3">
-          <Zap className="w-5 h-5" style={{ color: "oklch(0.78 0.18 210)" }} />
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center"
+            style={{
+              background: "oklch(0.14 0.03 235)",
+              border: "1px solid oklch(0.78 0.18 210 / 0.5)",
+              boxShadow: "0 0 12px oklch(0.78 0.18 210 / 0.35)",
+            }}
+          >
+            <Zap
+              className="w-4 h-4"
+              style={{ color: "oklch(0.78 0.18 210)" }}
+            />
+          </div>
           <div>
             <h1
-              className="text-xl font-bold tracking-[0.25em] font-mono glow-text-cyan"
-              style={{ color: "oklch(0.88 0.15 210)" }}
+              className="text-sm font-bold font-mono tracking-[0.15em]"
+              style={{ color: "oklch(0.88 0.12 210)" }}
             >
               J.A.R.V.I.S
             </h1>
             <p
-              className="text-xs tracking-widest"
-              style={{ color: "oklch(0.55 0.08 220)" }}
+              className="text-xs font-mono"
+              style={{ color: "oklch(0.45 0.06 230)" }}
             >
-              JUST A RATHER VERY INTELLIGENT SYSTEM
+              Personal AI · Friend · Search Engine
             </p>
           </div>
+          {showEmotionBadge && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono"
+              style={{
+                border: "1px solid oklch(0.78 0.18 210 / 0.3)",
+                background: "oklch(0.14 0.03 235 / 0.7)",
+                color: "oklch(0.75 0.1 215)",
+              }}
+            >
+              <span>{emotionEmoji}</span>
+              <span>
+                {EMOTION_BADGE_MESSAGES[detectedEmotion] ?? detectedEmotion}
+              </span>
+            </motion.div>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -1359,7 +1391,7 @@ function JarvisApp() {
                   className="text-2xl font-bold font-mono tracking-[0.2em] glow-text-cyan"
                   style={{ color: "oklch(0.88 0.15 210)" }}
                 >
-                  READY
+                  HEY, I'M JARVIS
                 </motion.h2>
                 <motion.p
                   initial={{ opacity: 0 }}
@@ -1368,9 +1400,9 @@ function JarvisApp() {
                   className="text-sm leading-relaxed"
                   style={{ color: "oklch(0.5 0.06 230)" }}
                 >
-                  Good day. All systems nominal. Ask me anything — I will search
-                  Google and the web if I need to. I also understand how you
-                  feel.
+                  Think of me as your super-smart friend who can search the
+                  whole internet in seconds, understands how you're feeling, and
+                  always has time for you. Just ask anything!
                 </motion.p>
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -1383,6 +1415,8 @@ function JarvisApp() {
                     "What is quantum physics?",
                     "Tell me a joke",
                     "Latest news on Google Chrome",
+                    "I'm feeling stressed",
+                    "What's new in AI?",
                   ].map((prompt) => (
                     <button
                       type="button"
@@ -1413,137 +1447,63 @@ function JarvisApp() {
                   index={i + 1}
                 />
               ))}
-              <AnimatePresence>
-                {isBusy && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    data-ocid="jarvis.loading_state"
-                    className="flex items-center gap-3"
-                  >
-                    <div
-                      className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-                      style={{
-                        background: "oklch(0.14 0.03 235)",
-                        border: "1px solid oklch(0.78 0.18 210 / 0.5)",
-                        boxShadow: "0 0 10px oklch(0.78 0.18 210 / 0.3)",
-                      }}
-                    >
-                      <span
-                        className="text-xs font-bold font-mono"
-                        style={{ color: "oklch(0.78 0.18 210)" }}
-                      >
-                        J
-                      </span>
-                    </div>
-                    <div
-                      className="px-4 py-3 rounded-lg jarvis-border-glow flex items-center gap-1.5"
-                      style={{ background: "oklch(0.14 0.03 235 / 0.8)" }}
-                    >
-                      <span
-                        className="text-xs font-mono"
-                        style={{ color: "oklch(0.78 0.18 210)" }}
-                      >
-                        {pick(SEARCH_MESSAGES)}
-                      </span>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
               <div ref={messagesEndRef} />
             </motion.div>
           )}
         </AnimatePresence>
       </main>
 
-      {/* Input */}
+      {/* Input area */}
       <footer
-        className="px-4 py-4 border-t"
+        className="px-4 py-4 border-t flex-shrink-0"
         style={{
-          borderColor: "oklch(0.22 0.04 230 / 0.6)",
-          background: "oklch(0.11 0.025 240 / 0.95)",
+          borderColor: "oklch(0.20 0.03 235)",
+          background: "oklch(0.11 0.025 238 / 0.95)",
+          backdropFilter: "blur(12px)",
         }}
       >
         <div className="max-w-3xl mx-auto">
-          {/* Emotional State Badge */}
-          <AnimatePresence>
-            {showEmotionBadge && (
-              <motion.div
-                key={detectedEmotion}
-                initial={{ opacity: 0, y: 6, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -4, scale: 0.95 }}
-                transition={{ duration: 0.3, ease: "easeOut" }}
-                data-ocid="jarvis.emotional_state"
-                className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-full w-fit"
-                style={{
-                  background: "oklch(0.14 0.03 235 / 0.7)",
-                  border: "1px solid oklch(0.78 0.18 210 / 0.2)",
-                  backdropFilter: "blur(8px)",
-                }}
-              >
-                <span className="text-base leading-none">{emotionEmoji}</span>
-                <span
-                  className="text-xs font-mono"
-                  style={{ color: "oklch(0.65 0.1 215)" }}
-                >
-                  {EMOTION_BADGE_MESSAGES[detectedEmotion] ?? ""}
-                </span>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           <div
-            className="flex gap-2 items-end rounded-lg p-1"
+            className="flex gap-2 items-end rounded-xl p-2"
             style={{
-              border: isListening
-                ? "1px solid oklch(0.65 0.22 25 / 0.7)"
-                : "1px solid oklch(0.78 0.18 210 / 0.25)",
-              background: "oklch(0.13 0.025 240)",
-              boxShadow: isListening
-                ? "0 0 20px oklch(0.65 0.22 25 / 0.2)"
-                : isBusy
-                  ? "0 0 20px oklch(0.78 0.18 210 / 0.15)"
-                  : "none",
-              transition: "box-shadow 0.3s ease, border-color 0.3s ease",
+              background: "oklch(0.14 0.03 235)",
+              border: "1px solid oklch(0.25 0.04 235)",
+              boxShadow: "0 0 20px oklch(0.78 0.18 210 / 0.08)",
             }}
           >
             <Textarea
               ref={textareaRef}
-              data-ocid="jarvis.textarea"
+              data-ocid="jarvis.input"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={isListening ? "Listening..." : "Ask me anything..."}
-              disabled={isBusy}
+              placeholder="Ask me anything — I'm here!"
+              className="flex-1 resize-none border-0 bg-transparent min-h-[44px] max-h-32 text-sm font-mono focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:opacity-40"
               rows={1}
-              className="flex-1 resize-none border-0 bg-transparent font-mono text-sm focus-visible:ring-0 focus-visible:ring-offset-0 min-h-[40px] max-h-[140px] py-2.5 px-3"
               style={{
-                color: "oklch(0.88 0.02 240)",
+                color: "oklch(0.88 0.04 225)",
                 caretColor: "oklch(0.78 0.18 210)",
               }}
             />
             {sttSupported && (
               <button
                 type="button"
-                data-ocid="jarvis.button"
+                data-ocid="jarvis.toggle"
                 onClick={toggleMic}
-                disabled={isBusy}
+                className="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition-all"
                 title={isListening ? "Stop listening" : "Start voice input"}
-                className="mb-1 flex items-center justify-center w-8 h-8 rounded transition-all flex-shrink-0"
                 style={{
                   background: isListening
-                    ? "oklch(0.65 0.22 25 / 0.2)"
-                    : "transparent",
+                    ? "oklch(0.65 0.2 25 / 0.2)"
+                    : "oklch(0.18 0.03 240)",
                   border: isListening
-                    ? "1px solid oklch(0.65 0.22 25 / 0.7)"
+                    ? "1px solid oklch(0.65 0.2 25 / 0.6)"
                     : "1px solid oklch(0.28 0.04 235)",
                   color: isListening
-                    ? "oklch(0.75 0.22 25)"
-                    : "oklch(0.55 0.08 220)",
+                    ? "oklch(0.75 0.2 25)"
+                    : "oklch(0.55 0.06 230)",
                   boxShadow: isListening
-                    ? "0 0 12px oklch(0.65 0.22 25 / 0.5)"
+                    ? "0 0 12px oklch(0.65 0.2 25 / 0.4)"
                     : "none",
                   animation: isListening
                     ? "pulse 1s ease-in-out infinite"
@@ -1551,49 +1511,73 @@ function JarvisApp() {
                 }}
               >
                 {isListening ? (
-                  <MicOff className="w-3.5 h-3.5" />
+                  <MicOff className="w-4 h-4" />
                 ) : (
-                  <Mic className="w-3.5 h-3.5" />
+                  <Mic className="w-4 h-4" />
                 )}
               </button>
             )}
             <Button
-              data-ocid="jarvis.primary_button"
+              data-ocid="jarvis.submit_button"
               onClick={handleSend}
-              disabled={!input.trim() || isBusy}
+              disabled={!input.trim() || isSearching}
               size="sm"
-              className="mb-1 mr-1 font-mono text-xs tracking-widest transition-all"
+              className="flex-shrink-0 w-9 h-9 p-0 rounded-lg transition-all"
               style={{
                 background:
-                  input.trim() && !isBusy
-                    ? "oklch(0.78 0.18 210)"
-                    : "oklch(0.22 0.04 230)",
+                  !input.trim() || isSearching
+                    ? "oklch(0.18 0.03 240)"
+                    : "oklch(0.55 0.18 210)",
+                border: "1px solid oklch(0.28 0.04 235)",
                 color:
-                  input.trim() && !isBusy
-                    ? "oklch(0.08 0.01 240)"
-                    : "oklch(0.45 0.06 230)",
+                  !input.trim() || isSearching
+                    ? "oklch(0.40 0.05 230)"
+                    : "oklch(0.95 0.02 220)",
                 boxShadow:
-                  input.trim() && !isBusy
-                    ? "0 0 20px oklch(0.78 0.18 210 / 0.4)"
+                  input.trim() && !isSearching
+                    ? "0 0 12px oklch(0.55 0.18 210 / 0.5)"
                     : "none",
-                transition: "all 0.2s ease",
               }}
             >
               <Send className="w-4 h-4" />
             </Button>
           </div>
           <p
-            className="text-center text-xs mt-2 font-mono"
+            className="text-center text-xs font-mono mt-2"
             style={{ color: "oklch(0.35 0.04 230)" }}
           >
-            {isListening
-              ? "🎙 Listening — click mic to stop"
-              : "ENTER to send · SHIFT+ENTER for new line"}
+            © {new Date().getFullYear()}.{" "}
+            <a
+              href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "oklch(0.50 0.08 215)" }}
+            >
+              Built with ❤ using caffeine.ai
+            </a>
           </p>
         </div>
       </footer>
 
+      {/* Admin gear button */}
+      <button
+        type="button"
+        onClick={onNavigateAdmin}
+        data-ocid="jarvis.open_modal_button"
+        title="Admin Panel"
+        className="fixed bottom-20 right-4 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 z-50"
+        style={{
+          background: "oklch(0.14 0.03 235)",
+          border: "1px solid oklch(0.28 0.06 220 / 0.5)",
+          color: "oklch(0.45 0.08 215)",
+          boxShadow: "0 2px 12px oklch(0.10 0.02 235 / 0.8)",
+        }}
+      >
+        <Settings className="w-4 h-4" />
+      </button>
+
       <Toaster
+        position="top-center"
         toastOptions={{
           style: {
             background: "oklch(0.14 0.03 235)",
@@ -1644,7 +1628,9 @@ function MessageBubble({
         </span>
       </div>
       <div
-        className={`px-4 py-3 rounded-lg text-sm leading-relaxed max-w-[80%] ${isJarvis ? "jarvis-border-glow" : ""}`}
+        className={`px-4 py-3 rounded-lg text-sm leading-relaxed max-w-[80%] ${
+          isJarvis ? "jarvis-border-glow" : ""
+        }`}
         style={{
           background: isJarvis
             ? "oklch(0.14 0.03 235 / 0.85)"
@@ -1663,9 +1649,14 @@ function MessageBubble({
 }
 
 export default function App() {
+  const [page, setPage] = useState<"main" | "admin">("main");
   return (
     <QueryClientProvider client={queryClient}>
-      <JarvisApp />
+      {page === "admin" ? (
+        <AdminPanel onBack={() => setPage("main")} />
+      ) : (
+        <JarvisApp onNavigateAdmin={() => setPage("admin")} />
+      )}
     </QueryClientProvider>
   );
 }

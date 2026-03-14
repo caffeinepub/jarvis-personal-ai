@@ -97,9 +97,16 @@ export interface Message {
 }
 export interface backendInterface {
     clearHistory(): Promise<void>;
+    deleteApiKey(name: string): Promise<void>;
+    getApiKey(name: string): Promise<string | null>;
     getHistory(): Promise<Array<Message>>;
-    getMessageCount(): Promise<bigint>;
+    isAdminPasswordSet(): Promise<boolean>;
+    listApiKeyNames(): Promise<Array<string>>;
+    saveJarvisMessage(content: string): Promise<void>;
     sendMessage(userText: string): Promise<string>;
+    setAdminPassword(password: string): Promise<void>;
+    setApiKey(name: string, value: string): Promise<void>;
+    verifyAdminPassword(password: string): Promise<boolean>;
 }
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
@@ -117,6 +124,34 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async deleteApiKey(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteApiKey(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteApiKey(arg0);
+            return result;
+        }
+    }
+    async getApiKey(arg0: string): Promise<string | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getApiKey(arg0);
+                return from_candid_opt_n1(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getApiKey(arg0);
+            return from_candid_opt_n1(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async getHistory(): Promise<Array<Message>> {
         if (this.processError) {
             try {
@@ -131,17 +166,45 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async getMessageCount(): Promise<bigint> {
+    async isAdminPasswordSet(): Promise<boolean> {
         if (this.processError) {
             try {
-                const result = await this.actor.getMessageCount();
+                const result = await this.actor.isAdminPasswordSet();
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.getMessageCount();
+            const result = await this.actor.isAdminPasswordSet();
+            return result;
+        }
+    }
+    async listApiKeyNames(): Promise<Array<string>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.listApiKeyNames();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.listApiKeyNames();
+            return result;
+        }
+    }
+    async saveJarvisMessage(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.saveJarvisMessage(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.saveJarvisMessage(arg0);
             return result;
         }
     }
@@ -159,6 +222,51 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async setAdminPassword(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setAdminPassword(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setAdminPassword(arg0);
+            return result;
+        }
+    }
+    async setApiKey(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setApiKey(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setApiKey(arg0, arg1);
+            return result;
+        }
+    }
+    async verifyAdminPassword(arg0: string): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.verifyAdminPassword(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.verifyAdminPassword(arg0);
+            return result;
+        }
+    }
+}
+function from_candid_opt_n1(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [string]): string | null {
+    return value.length === 0 ? null : value[0];
 }
 export interface CreateActorOptions {
     agent?: Agent;

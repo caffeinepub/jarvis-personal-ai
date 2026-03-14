@@ -15,8 +15,14 @@ export interface Message {
 }
 export interface backendInterface {
     clearHistory(): Promise<void>;
+    deleteApiKey(name: string): Promise<void>;
+    getApiKey(name: string): Promise<string | null>;
     getHistory(): Promise<Array<Message>>;
-    getMessageCount(): Promise<bigint>;
-    sendMessage(userText: string): Promise<string>;
+    isAdminPasswordSet(): Promise<boolean>;
+    listApiKeyNames(): Promise<Array<string>>;
     saveJarvisMessage(content: string): Promise<void>;
+    sendMessage(userText: string): Promise<string>;
+    setAdminPassword(password: string): Promise<void>;
+    setApiKey(name: string, value: string): Promise<void>;
+    verifyAdminPassword(password: string): Promise<boolean>;
 }

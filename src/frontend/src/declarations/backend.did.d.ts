@@ -18,9 +18,16 @@ export interface Message {
 }
 export interface _SERVICE {
   'clearHistory' : ActorMethod<[], undefined>,
+  'deleteApiKey' : ActorMethod<[string], undefined>,
+  'getApiKey' : ActorMethod<[string], [] | [string]>,
   'getHistory' : ActorMethod<[], Array<Message>>,
-  'getMessageCount' : ActorMethod<[], bigint>,
+  'isAdminPasswordSet' : ActorMethod<[], boolean>,
+  'listApiKeyNames' : ActorMethod<[], Array<string>>,
+  'saveJarvisMessage' : ActorMethod<[string], undefined>,
   'sendMessage' : ActorMethod<[string], string>,
+  'setAdminPassword' : ActorMethod<[string], undefined>,
+  'setApiKey' : ActorMethod<[string, string], undefined>,
+  'verifyAdminPassword' : ActorMethod<[string], boolean>,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

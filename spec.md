@@ -1,27 +1,30 @@
 # JARVIS Personal AI
 
 ## Current State
-JARVIS is a browser-based AI assistant with emotional intelligence, multi-source search (Wikipedia, DuckDuckGo, Google News RSS, Open Library), natural male TTS voice, STT input, and conversation context memory. No API key required.
+The app has a working Motoko backend that handles conversation history, message routing, and signals the frontend to perform browser-based web searches. The frontend is a JARVIS AI chat interface with voice, emotional intelligence, and multi-source search.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Google News RSS search: pull live headlines/summaries from Google News for any topic
-- Google Search snippets via public feeds or DuckDuckGo JSON fallback
-- AI topic boost: dedicated search path for AI-related queries (ChatGPT, Gemini, ML, etc.) using Google News AI feed
-- Parallel fetch: all sources queried simultaneously
+- Backend: Stable storage for API keys (OpenAI key, Google key, and an optional label/value generic slot)
+- Backend: Admin password storage (hashed check) with set/verify functions
+- Backend: `setAdminPassword(pwd)`, `verifyAdminPassword(pwd) -> Bool`, `setApiKey(name, value)`, `getApiKey(name) -> ?Text` functions
+- Frontend: Admin panel page (route `/admin`) accessible via a small gear icon in the main UI
+- Frontend: Password gate -- if no password set, prompt to create one; otherwise prompt to enter it
+- Frontend: Once authenticated, show API key management form with fields for OpenAI API Key and Google API Key (custom label+value pairs)
+- Frontend: Save/update keys via backend calls; show masked values for existing keys
+- Frontend: Session-based auth state (stays logged in for the session, not persisted)
 
 ### Modify
-- Search engine: add Google News RSS and Google Search RSS as primary sources
-- Search prioritization: Google News for news/current events, Wikipedia for factual, DuckDuckGo as fallback
-- Response synthesis: incorporate Google News titles and snippets into JARVIS answers
+- Backend: Add new stable vars for admin password hash and api key map without breaking existing stable vars
+- Frontend: Add a small admin settings button/link to the main JARVIS UI
 
 ### Remove
-- Nothing; existing sources remain as fallbacks
+- Nothing removed
 
 ## Implementation Plan
-1. Add searchGoogleNews(query) using Google News RSS feed parsed via DOMParser
-2. Add AI-topic detection boosting Google News AI feed for AI/ML queries
-3. Update parallel search orchestrator to include new Google sources
-4. Update answer synthesis to prefer Google News for news, Wikipedia for facts
-5. Keep all existing sources as additional fallbacks
+1. Update Motoko backend to add stable vars: `adminPasswordHash: Text`, `apiKeys: [(Text, Text)]`
+2. Add backend functions: `setAdminPassword`, `verifyAdminPassword`, `setApiKey`, `getApiKey`, `listApiKeyNames`
+3. Regenerate backend bindings
+4. Build AdminPanel React component with password gate and key management form
+5. Add route and nav link to admin panel from main UI
